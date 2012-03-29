@@ -5935,6 +5935,7 @@ static int nl80211_set_wowlan(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_wowlan new_triggers = {};
 	struct wiphy_wowlan_support *wowlan = &rdev->wiphy.wowlan;
 	int err, i;
+	int ret = 0;
 
 	if (!rdev->wiphy.wowlan.flags && !rdev->wiphy.wowlan.n_patterns)
 		return -EOPNOTSUPP;
@@ -6067,7 +6068,10 @@ static int nl80211_set_wowlan(struct sk_buff *skb, struct genl_info *info)
 		rdev->wowlan = NULL;
 	}
 
-	return 0;
+	if (rdev->ops->set_rx_filters)
+		ret = rdev->ops->set_rx_filters(&rdev->wiphy,
+						rdev->wowlan);
+	return ret;
  error:
 	for (i = 0; i < new_triggers.n_patterns; i++)
 		kfree(new_triggers.patterns[i].mask);

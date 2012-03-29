@@ -534,6 +534,13 @@ void ieee80211_sta_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 	}
 }
 
+void ieee80211_get_current_rssi(struct ieee80211_sub_if_data *sdata,
+				struct station_info *sinfo)
+{
+	struct ieee80211_local *local = sdata->local;
+	drv_get_current_rssi(local, sdata, &sdata->vif.bss_conf, sinfo);
+}
+
 static void ieee80211_handle_pwr_constr(struct ieee80211_sub_if_data *sdata,
 					u16 capab_info, u8 *pwr_constr_elem,
 					u8 pwr_constr_elem_len)
@@ -1032,6 +1039,10 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 		bss_conf->dtim_period = 0;
 
 	bss_conf->assoc = 1;
+	mutex_lock(&local->mtx);
+	ieee80211_recalc_idle(local);
+	mutex_unlock(&local->mtx);
+
 	/*
 	 * For now just always ask the driver to update the basic rateset
 	 * when we have associated, we aren't checking whether it actually
@@ -2081,20 +2092,20 @@ void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 	if (skb->len >= 24 + 2 /* mgmt + deauth reason */ &&
 	    (fc & IEEE80211_FCTL_STYPE) == IEEE80211_STYPE_DEAUTH) {
 		struct ieee80211_local *local = sdata->local;
-		struct ieee80211_work *wk;
+		struct ieee80211_work *tmp, *wk = NULL;
 
 		mutex_lock(&local->mtx);
-		list_for_each_entry(wk, &local->work_list, list) {
-			if (wk->sdata != sdata)
+		list_for_each_entry(tmp, &local->work_list, list) {
+			if (tmp->sdata != sdata)
 				continue;
 
-			if (wk->type != IEEE80211_WORK_ASSOC &&
-			    wk->type != IEEE80211_WORK_ASSOC_BEACON_WAIT)
+			if (tmp->type != IEEE80211_WORK_ASSOC &&
+			    tmp->type != IEEE80211_WORK_ASSOC_BEACON_WAIT)
 				continue;
 
-			if (memcmp(mgmt->bssid, wk->filter_ta, ETH_ALEN))
+			if (memcmp(mgmt->bssid, tmp->filter_ta, ETH_ALEN))
 				continue;
-			if (memcmp(mgmt->sa, wk->filter_ta, ETH_ALEN))
+			if (memcmp(mgmt->sa, tmp->filter_ta, ETH_ALEN))
 				continue;
 
 			/*
@@ -2111,11 +2122,18 @@ void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 			       sdata->name, mgmt->bssid,
 			       le16_to_cpu(mgmt->u.deauth.reason_code));
 
-			list_del_rcu(&wk->list);
-			free_work(wk);
+			list_del_rcu(&tmp->list);
+			synchronize_rcu();
+			wk = tmp;
 			break;
 		}
 		mutex_unlock(&local->mtx);
+
+		if (wk && wk->type == IEEE80211_WORK_ASSOC) {
+			/* clean up dummy sta */
+			sta_info_destroy_addr(wk->sdata, wk->filter_ta);
+		}
+		kfree(wk);
 
 		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 	}
@@ -2284,13 +2302,16 @@ static void ieee80211_sta_monitor_work(struct work_struct *work)
 
 static void ieee80211_restart_sta_timer(struct ieee80211_sub_if_data *sdata)
 {
+	u32 flags;
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sdata->u.mgd.flags &= ~(IEEE80211_STA_BEACON_POLL |
 					IEEE80211_STA_CONNECTION_POLL);
 
 		/* let's probe the connection once */
-		ieee80211_queue_work(&sdata->local->hw,
-			   &sdata->u.mgd.monitor_work);
+		flags = sdata->local->hw.flags;
+		if (!(flags & IEEE80211_HW_CONNECTION_MONITOR))
+			ieee80211_queue_work(&sdata->local->hw,
+					     &sdata->u.mgd.monitor_work);
 		/* and do all the other regular work too */
 		ieee80211_queue_work(&sdata->local->hw, &sdata->work);
 	}
@@ -2354,7 +2375,6 @@ void ieee80211_sta_restart(struct ieee80211_sub_if_data *sdata)
 		add_timer(&ifmgd->chswitch_timer);
 	ieee80211_sta_reset_beacon_monitor(sdata);
 	ieee80211_restart_sta_timer(sdata);
-	ieee80211_queue_work(&sdata->local->hw, &sdata->u.mgd.monitor_work);
 }
 #endif
 
@@ -2457,6 +2477,9 @@ int ieee80211_mgd_auth(struct ieee80211_sub_if_data *sdata,
 
 	if (req->local_state_change)
 		return 0; /* no need to update mac80211 state */
+
+	/* first, disconnect from previous AP */
+	ieee80211_disassoc_only(sdata);
 
 	switch (req->auth_type) {
 	case NL80211_AUTHTYPE_OPEN_SYSTEM:
@@ -2888,6 +2911,13 @@ int ieee80211_disassoc_only(struct ieee80211_sub_if_data *sdata)
 	ieee80211_set_disassoc(sdata, true, false);
 
 	mutex_unlock(&ifmgd->mtx);
+
+	sta_info_flush(sdata->local, sdata);
+
+	mutex_lock(&sdata->local->mtx);
+	ieee80211_recalc_idle(sdata->local);
+	mutex_unlock(&sdata->local->mtx);
+
 	return 0;
 }
 void ieee80211_cqm_rssi_notify(struct ieee80211_vif *vif,

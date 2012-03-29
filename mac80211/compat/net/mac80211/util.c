@@ -1244,6 +1244,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 	ieee80211_hw_config(local, ~0);
 
 	ieee80211_configure_filter(local);
+	ieee80211_set_rx_filters(hw->wiphy, local->wowlan_patterns);
 
 	/* Finally also reconfigure all the BSS information */
 	list_for_each_entry(sdata, &local->interfaces, list) {

@@ -760,6 +760,20 @@ static inline int drv_set_bitrate_mask(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline int drv_set_rx_filters(struct ieee80211_local *local,
+				     struct cfg80211_wowlan *wowlan)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+
+	/* TODO: Add tracing */
+	if (local->ops->set_rx_filters)
+		ret = local->ops->set_rx_filters(&local->hw, wowlan);
+
+	return ret;
+}
+
 static inline void drv_set_rekey_data(struct ieee80211_local *local,
 				      struct ieee80211_sub_if_data *sdata,
 				      struct cfg80211_gtk_rekey_data *data)
@@ -827,4 +841,16 @@ drv_set_default_unicast_key(struct ieee80211_local *local,
 
 	return ret;
 }
+
+static inline void drv_get_current_rssi(struct ieee80211_local *local,
+					struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_bss_conf *info,
+					struct station_info *sinfo)
+{
+	if (local->ops->get_current_rssi)
+		local->ops->get_current_rssi(&local->hw, &sdata->vif, sinfo);
+
+	trace_drv_return_void(local);
+}
+
 #endif /* __MAC80211_DRIVER_OPS */

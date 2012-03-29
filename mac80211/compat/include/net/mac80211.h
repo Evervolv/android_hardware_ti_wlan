@@ -1178,6 +1178,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_CANCEL_SCAN		= 1<<24,
 	IEEE80211_HW_SUPPORTS_IM_SCAN_EVENT		= 1<<25,
 	IEEE80211_HW_SCAN_WHILE_IDLE			= 1<<26,
+	IEEE80211_HW_SUPPORTS_RX_FILTERS                = 1<<27,
 };
 
 /**
@@ -2270,6 +2271,11 @@ struct ieee80211_ops {
 					bool more_data);
 	int (*set_default_key_idx)(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif, int idx);
+	void (*get_current_rssi)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct station_info *sinfo);
+	int (*set_rx_filters)(struct ieee80211_hw *hw,
+			      struct cfg80211_wowlan *wowlan);
 };
 
 /**

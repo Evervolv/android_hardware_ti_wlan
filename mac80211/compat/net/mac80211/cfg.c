@@ -472,18 +472,21 @@ static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 				 u8 *mac, struct station_info *sinfo)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct sta_info *sta;
 	int ret = -ENOENT;
 
-	rcu_read_lock();
+	mutex_lock(&local->sta_mtx);
 
 	sta = sta_info_get_bss(sdata, mac);
 	if (sta) {
 		ret = 0;
 		sta_set_sinfo(sta, sinfo);
+		/* if driver supports, get more updated rssi */
+		ieee80211_get_current_rssi(sdata, sinfo);
 	}
 
-	rcu_read_unlock();
+	mutex_unlock(&local->sta_mtx);
 
 	return ret;
 }
@@ -495,8 +498,7 @@ static void ieee80211_config_ap_ssid(struct ieee80211_sub_if_data *sdata,
 
 	bss_conf->ssid_len = params->ssid_len;
 
-	if (params->ssid_len)
-		memcpy(bss_conf->ssid, params->ssid, params->ssid_len);
+	memcpy(bss_conf->ssid, params->ssid, params->ssid_len);
 
 	bss_conf->hidden_ssid =
 		(params->hidden_ssid != NL80211_HIDDEN_SSID_NOT_IN_USE);
@@ -626,7 +628,9 @@ static int ieee80211_config_beacon(struct ieee80211_sub_if_data *sdata,
 	if (!err)
 		changed |= BSS_CHANGED_AP_PROBE_RESP;
 
-	ieee80211_config_ap_ssid(sdata, params);
+	if (params->ssid_len)
+		ieee80211_config_ap_ssid(sdata, params);
+
 	changed |= BSS_CHANGED_BEACON_ENABLED |
 		   BSS_CHANGED_BEACON |
 		   BSS_CHANGED_SSID;
@@ -1874,6 +1878,18 @@ static int ieee80211_set_power_mgmt(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
+int ieee80211_set_rx_filters(struct wiphy *wiphy,
+			     struct cfg80211_wowlan *wowlan)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	if (!(local->hw.flags & IEEE80211_HW_SUPPORTS_RX_FILTERS))
+		return 0;
+
+	local->wowlan_patterns = wowlan;
+	return drv_set_rx_filters(local, wowlan);
+}
+
 static int ieee80211_set_cqm_rssi_config(struct wiphy *wiphy,
 					 struct net_device *dev,
 					 s32 rssi_thold, u32 rssi_hyst)
@@ -2772,4 +2788,5 @@ struct cfg80211_ops mac80211_config_ops = {
 	.probe_client = ieee80211_probe_client,
 	.get_channel = ieee80211_wiphy_get_channel,
 	.set_noack_map = ieee80211_set_noack_map,
+	.set_rx_filters = ieee80211_set_rx_filters,
 };

@@ -1784,7 +1784,7 @@ int wl1271_acx_set_rx_data_filter(struct wl1271 *wl, u8 index, bool enable,
 		return -EINVAL;
 	}
 
-	if (index >= WL1271_MAX_RX_DATA_FILTERS) {
+	if (index >= WL1271_MAX_RX_FILTERS) {
 		wl1271_warning("acx_set_rx_data_filter: invalid filter idx(%d)",
 			       index);
 		return -EINVAL;
@@ -1797,20 +1797,13 @@ int wl1271_acx_set_rx_data_filter(struct wl1271 *wl, u8 index, bool enable,
 				       filter->action);
 			return -EINVAL;
 		}
-
-		if (filter->num_fields != 1 &&
-		    filter->num_fields != 2) {
-			wl1271_warning("invalid filter num_fields (%d)",
-				       filter->num_fields);
-			return -EINVAL;
-		}
 	}
 
 	wl1271_debug(DEBUG_ACX, "acx set rx data filter idx: %d, enable: %d",
 		     index, enable);
 
 	if (enable) {
-		fields_size = filter->fields_size;
+		fields_size = wl1271_rx_filter_get_fields_size(filter);
 
 		wl1271_debug(DEBUG_ACX, "act: %d num_fields: %d field_size: %d",
 		      filter->action, filter->num_fields, fields_size);
@@ -1829,7 +1822,7 @@ int wl1271_acx_set_rx_data_filter(struct wl1271 *wl, u8 index, bool enable,
 		acx->num_fields = filter->num_fields;
 		acx->action = filter->action;
 
-		memcpy(acx->fields, filter->fields, filter->fields_size);
+		wl1271_rx_filter_flatten_fields(filter, acx->fields);
 	}
 
 	wl1271_dump(DEBUG_ACX, "RX_FILTER: ", acx, acx_size);
@@ -1843,5 +1836,34 @@ int wl1271_acx_set_rx_data_filter(struct wl1271 *wl, u8 index, bool enable,
 
 out:
 	kfree(acx);
+	return ret;
+}
+
+int wl12xx_acx_sta_get_rssi(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			    int *rssi)
+{
+	struct wl12xx_acx_roaming_statistics *stat_info;
+	int ret;
+
+	wl1271_debug(DEBUG_ACX, "acx roaming statistics table");
+
+	stat_info = kzalloc(sizeof(*stat_info), GFP_KERNEL);
+	if (!stat_info)
+		return -ENOMEM;
+
+	stat_info->role_id = wlvif->role_id;
+
+	ret = wl1271_cmd_interrogate(wl, ACX_ROAMING_STATISTICS_TBL,
+				     stat_info, sizeof(*stat_info));
+	if (ret < 0) {
+		wl1271_warning("Reading acx roaming statistics"
+			       " table failed: %d", ret);
+		goto out;
+	}
+
+	*rssi = stat_info->rssi_beacon;
+
+out:
+	kfree(stat_info);
 	return ret;
 }

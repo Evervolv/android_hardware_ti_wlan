@@ -862,6 +862,22 @@ struct conf_conn_settings {
 	u32 bss_lose_timeout;
 
 	/*
+	 * Max time (in msec) between beacon loss events in which they are still
+	 * considered consecutive (and a new message won't be generated)
+	 *
+	 * Range: u32
+	 */
+	 u32 cons_bcn_loss_time;
+
+	/*
+	 * Max handling time (in msec) for beacon loss events, before a connection
+	 * loss event will be sent
+	 *
+	 * Range u32
+	 */
+	 u32 max_bcn_loss_time;
+
+	/*
 	 * Beacon receive timeout.
 	 *
 	 * Range: u32

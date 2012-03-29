@@ -1693,6 +1693,9 @@ struct cfg80211_ops {
 				  struct net_device *dev,
 				  u16 noack_map);
 
+	int     (*set_rx_filters)(struct wiphy *wiphy,
+				  struct cfg80211_wowlan *wowlan);
+
 	struct ieee80211_channel *(*get_channel)(struct wiphy *wiphy);
 };
 

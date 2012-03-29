@@ -761,6 +761,11 @@ int wl1271_boot(struct wl1271 *wl)
 {
 	int ret;
 
+	/* polarity must be set before the firmware is loaded */
+	ret = wl1271_boot_write_irq_polarity(wl);
+	if (ret < 0)
+		goto out;
+
 	/* upload NVS and firmware */
 	ret = wl1271_load_firmware(wl);
 	if (ret)
@@ -768,10 +773,6 @@ int wl1271_boot(struct wl1271 *wl)
 
 	/* 10.5 start firmware */
 	ret = wl1271_boot_run_firmware(wl);
-	if (ret < 0)
-		goto out;
-
-	ret = wl1271_boot_write_irq_polarity(wl);
 	if (ret < 0)
 		goto out;
 

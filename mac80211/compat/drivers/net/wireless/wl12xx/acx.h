@@ -1008,6 +1008,23 @@ struct wl12xx_acx_fw_tsf_information {
 	u8 padding2[3];
 } __packed;
 
+struct wl12xx_acx_roaming_statistics {
+	struct acx_header header;
+
+	u8 role_id;
+	u8  padding[3];
+	/* The current number of consecutive lost beacons*/
+	__le32 missed_beacons;
+	/* The current average SNR in db - For Data Packets*/
+	u8  snr_data;
+	/* The current average SNR in db - For Beacon Packets*/
+	u8  snr_beacon;
+	/* The current average RSSI  - For Data Packets*/
+	char  rssi_data;
+	/* The current average RSSI - For Beacon Packets*/
+	char  rssi_beacon;
+} __packed;
+
 struct wl1271_acx_ps_rx_streaming {
 	struct acx_header header;
 
@@ -1175,7 +1192,7 @@ struct acx_rx_data_filter_cfg {
 
 	u8 num_fields;
 
-	struct wl12xx_rx_data_filter_field fields[0];
+	u8 fields[0];
 } __packed;
 
 enum {
@@ -1340,4 +1357,6 @@ int wl1271_acx_toggle_rx_data_filter(struct wl1271 *wl, bool enable,
 				     u8 default_action);
 int wl1271_acx_set_rx_data_filter(struct wl1271 *wl, u8 index, bool enable,
 				  struct wl12xx_rx_data_filter *filter);
+int wl12xx_acx_sta_get_rssi(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			    int *rssi);
 #endif /* __WL1271_ACX_H__ */

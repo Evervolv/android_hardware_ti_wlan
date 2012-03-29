@@ -342,7 +342,7 @@ void wl1271_rx_data_filters_clear_all(struct wl1271 *wl)
 {
 	int i;
 
-	for (i = 0; i < WL1271_MAX_RX_DATA_FILTERS; i++) {
+	for (i = 0; i < WL1271_MAX_RX_FILTERS; i++) {
 		if (!wl->rx_data_filters_status[i])
 			continue;
 		wl1271_rx_data_filter_enable(wl, i, 0, NULL);

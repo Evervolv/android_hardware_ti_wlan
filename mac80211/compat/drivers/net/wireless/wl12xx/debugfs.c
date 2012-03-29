@@ -32,6 +32,7 @@
 #include "ps.h"
 #include "io.h"
 #include "tx.h"
+#include "version.h"
 
 /* ms */
 #define WL1271_DEBUGFS_STATS_LIFETIME 1000

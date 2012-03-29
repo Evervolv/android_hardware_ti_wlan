@@ -295,18 +295,26 @@ struct wl1271_link {
 	u8 ba_bitmap;
 };
 
-#define WL1271_MAX_RX_DATA_FILTERS 4
-#define WL1271_RX_DATA_FILTER_MAX_FIELD_PATTERNS 8
+struct ap_peers {
+	struct list_head list;
+	struct ieee80211_sta sta;
+	struct ieee80211_vif *vif;
+	struct ieee80211_hw *hw;
+};
 
-/* FW MAX FILTER SIZE is 98 bytes. The MAX_PATTERN_SIZE is imposed
- * after taking into account the mask bytes and other structs members
- */
-#define WL1271_RX_DATA_FILTER_MAX_PATTERN_SIZE 43
-#define WL1271_RX_DATA_FILTER_ETH_HEADER_SIZE 14
+#define WL1271_MAX_RX_FILTERS 5
+#define WL1271_RX_FILTER_MAX_FIELDS 8
 
-#define WL1271_RX_DATA_FILTER_FLAG_MASK                BIT(0)
-#define WL1271_RX_DATA_FILTER_FLAG_IP_HEADER           0
-#define WL1271_RX_DATA_FILTER_FLAG_ETHERNET_HEADER     BIT(1)
+#define WL1271_RX_FILTER_ETH_HEADER_SIZE 14
+#define WL1271_RX_FILTER_MAX_FIELDS_SIZE 95
+#define RX_FILTER_FIELD_OVERHEAD \
+	(sizeof(struct wl12xx_rx_data_filter_field) - sizeof(u8 *))
+#define WL1271_RX_FILTER_MAX_PATTERN_SIZE \
+	(WL1271_RX_FILTER_MAX_FIELDS_SIZE - RX_FILTER_FIELD_OVERHEAD)
+
+#define WL1271_RX_FILTER_FLAG_MASK                BIT(0)
+#define WL1271_RX_FILTER_FLAG_IP_HEADER           0
+#define WL1271_RX_FILTER_FLAG_ETHERNET_HEADER     BIT(1)
 
 enum rx_data_filter_action {
 	FILTER_DROP = 0,
@@ -318,15 +326,14 @@ struct wl12xx_rx_data_filter_field {
 	__le16 offset;
 	u8 len;
 	u8 flags;
-	u8 pattern[0];
+	u8 *pattern;
 } __packed;
 
 struct wl12xx_rx_data_filter {
 	u8 action;
 	int num_fields;
-	int fields_size;
-	struct wl12xx_rx_data_filter_field fields[0];
-} __packed;
+	struct wl12xx_rx_data_filter_field fields[WL1271_RX_FILTER_MAX_FIELDS];
+};
 
 struct wl1271 {
 	struct ieee80211_hw *hw;
@@ -542,7 +549,12 @@ struct wl1271 {
 	struct work_struct ap_start_work;
 
 	/* RX Data filter rule status - enabled/disabled */
-	bool rx_data_filters_status[WL1271_MAX_RX_DATA_FILTERS];
+	bool rx_data_filters_status[WL1271_MAX_RX_FILTERS];
+
+	/* AP's peers */
+	struct list_head peers_list;
+
+	bool watchdog_recovery;
 };
 
 struct wl1271_station {
@@ -571,6 +583,10 @@ struct wl12xx_vif {
 			u8 p2p_rate_idx;
 
 			bool qos;
+
+			/* first and last beacon loss times */
+			unsigned long first_bcn_loss;
+			unsigned long last_bcn_loss;
 		} sta;
 		struct {
 			u8 global_hlid;
@@ -702,6 +718,20 @@ int wl1271_plt_stop(struct wl1271 *wl);
 int wl1271_recalc_rx_streaming(struct wl1271 *wl, struct wl12xx_vif *wlvif);
 void wl12xx_queue_recovery_work(struct wl1271 *wl);
 size_t wl12xx_copy_fwlog(struct wl1271 *wl, u8 *memblock, size_t maxlen);
+int wl1271_rx_filter_alloc_field(struct wl12xx_rx_data_filter *filter,
+					u16 offset, u8 flags,
+					u8 *pattern, u8 len);
+void wl1271_rx_filter_free(struct wl12xx_rx_data_filter *filter);
+struct wl12xx_rx_data_filter *wl1271_rx_filter_alloc(void);
+int wl1271_rx_filter_get_fields_size(struct wl12xx_rx_data_filter *filter);
+void wl1271_rx_filter_flatten_fields(struct wl12xx_rx_data_filter *filter,
+				     u8 *buf);
+int wl1271_op_sta_add_locked(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_sta *sta);
+void wl12xx_update_sta_state(struct wl1271 *wl,
+			     struct ieee80211_sta *sta,
+			     enum ieee80211_sta_state state);
 
 #define JOIN_TIMEOUT 5000 /* 5000 milliseconds to join */
 

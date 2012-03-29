@@ -838,6 +838,9 @@ struct ieee80211_local {
 	/* wowlan is enabled -- don't reconfig on resume */
 	bool wowlan;
 
+	/* Patterns configured with set_rx_filters */
+	struct cfg80211_wowlan *wowlan_patterns;
+
 	int tx_headroom; /* required headroom for hardware/radiotap */
 
 	/* Tasklet and skb queue to process calls from IRQ mode. All frames
@@ -1142,6 +1145,8 @@ void ieee80211_tx_set_protected(struct ieee80211_tx_data *tx);
 void ieee80211_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
 				      u32 changed);
 void ieee80211_configure_filter(struct ieee80211_local *local);
+int ieee80211_set_rx_filters(struct wiphy *wiphy,
+			     struct cfg80211_wowlan *wowlan);
 u32 ieee80211_reset_erp_info(struct ieee80211_sub_if_data *sdata);
 
 /* STA code */
@@ -1167,6 +1172,9 @@ void ieee80211_sta_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 				      struct ieee80211_channel_sw_ie *sw_elem,
 				      struct ieee80211_bss *bss,
 				      u64 timestamp);
+void ieee80211_get_current_rssi(struct ieee80211_sub_if_data *sdata,
+				struct station_info *sinfo);
+
 void ieee80211_sta_quiesce(struct ieee80211_sub_if_data *sdata);
 void ieee80211_sta_restart(struct ieee80211_sub_if_data *sdata);
 void ieee80211_sta_work(struct ieee80211_sub_if_data *sdata);

@@ -28,9 +28,9 @@
 #include "driver-ops.h"
 
 #define IEEE80211_AUTH_TIMEOUT (HZ / 5)
-#define IEEE80211_AUTH_MAX_TRIES 3
+#define IEEE80211_AUTH_MAX_TRIES 5
 #define IEEE80211_ASSOC_TIMEOUT (HZ / 5)
-#define IEEE80211_ASSOC_MAX_TRIES 3
+#define IEEE80211_ASSOC_MAX_TRIES 5
 
 enum work_action {
 	WORK_ACT_MISMATCH,
@@ -454,10 +454,6 @@ ieee80211_authenticate(struct ieee80211_work *wk)
 	struct ieee80211_sub_if_data *sdata = wk->sdata;
 	struct ieee80211_local *local = sdata->local;
 
-	/* first, disconnect from previous AP */
-	if (!wk->probe_auth.tries)
-		ieee80211_disassoc_only(sdata);
-
 	if (!wk->probe_auth.synced) {
 		int ret = drv_tx_sync(local, sdata, wk->filter_ta,
 				      IEEE80211_TX_SYNC_AUTH);
@@ -630,6 +626,16 @@ ieee80211_rx_mgmt_auth(struct ieee80211_work *wk,
 	if (status_code != WLAN_STATUS_SUCCESS) {
 		printk(KERN_DEBUG "%s: %pM denied authentication (status %d)\n",
 		       wk->sdata->name, mgmt->sa, status_code);
+
+		if (status_code == WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA) {
+			u32 ms = 200;
+			printk(KERN_DEBUG "%s: %pM rejected auth; "
+			       "trying again in %u ms\n",
+			       wk->sdata->name, mgmt->sa, ms);
+			wk->timeout = jiffies + msecs_to_jiffies(ms);
+			return WORK_ACT_NONE;
+		}
+
 		return WORK_ACT_DONE;
 	}
 
@@ -700,6 +706,15 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_work *wk,
 		wk->timeout = jiffies + msecs_to_jiffies(ms);
 		if (ms > IEEE80211_ASSOC_TIMEOUT)
 			run_again(local, wk->timeout);
+		return WORK_ACT_NONE;
+	}
+
+	if (status_code == WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA) {
+		u32 ms = 200;
+		printk(KERN_DEBUG "%s: %pM rejected association; "
+		       "trying again in %u ms\n",
+		       sdata->name, mgmt->sa, ms);
+		wk->timeout = jiffies + msecs_to_jiffies(ms);
 		return WORK_ACT_NONE;
 	}
 

@@ -707,9 +707,16 @@ int wl12xx_cmd_role_start_ap(struct wl1271 *wl, struct wl12xx_vif *wlvif)
 
 	wl1271_debug(DEBUG_CMD, "cmd role start ap %d", wlvif->role_id);
 
-	/* trying to use hidden SSID with an old hostapd version */
+	/* trying to use a non-hidden SSID without SSID IE */
 	if (wlvif->ssid_len == 0 && !bss_conf->hidden_ssid) {
 		wl1271_error("got a null SSID from beacon/bss");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* trying to use hidden SSID without configured SSID */
+	if (bss_conf->ssid_len == 0 && bss_conf->hidden_ssid) {
+		wl1271_error("missing hidden SSID");
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1565,9 +1572,11 @@ int wl12xx_cmd_add_peer(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 
 	for (i = 0; i < NUM_ACCESS_CATEGORIES_COPY; i++)
 		if (sta->wme && (sta->uapsd_queues & BIT(i)))
-			cmd->psd_type[i] = WL1271_PSD_UPSD_TRIGGER;
+			cmd->psd_type[NUM_ACCESS_CATEGORIES_COPY-1-i] =
+					WL1271_PSD_UPSD_TRIGGER;
 		else
-			cmd->psd_type[i] = WL1271_PSD_LEGACY;
+			cmd->psd_type[NUM_ACCESS_CATEGORIES_COPY-1-i] =
+					WL1271_PSD_LEGACY;
 
 	sta_rates = sta->supp_rates[wlvif->band];
 	if (sta->ht_cap.ht_supported)
@@ -1792,19 +1801,25 @@ out:
 int wl12xx_roc(struct wl1271 *wl, struct wl12xx_vif *wlvif, u8 role_id)
 {
 	int ret = 0;
+	bool is_first_roc;
 
 	if (WARN_ON(test_bit(role_id, wl->roc_map)))
 		return 0;
+
+	is_first_roc = (find_first_bit(wl->roc_map, WL12XX_MAX_ROLES) >=
+			WL12XX_MAX_ROLES);
 
 	ret = wl12xx_cmd_roc(wl, wlvif, role_id);
 	if (ret < 0)
 		goto out;
 
-	ret = wl1271_cmd_wait_for_event(wl,
-					REMAIN_ON_CHANNEL_COMPLETE_EVENT_ID);
-	if (ret < 0) {
-		wl1271_error("cmd roc event completion error");
-		goto out;
+	if (is_first_roc) {
+		ret = wl1271_cmd_wait_for_event(wl,
+					   REMAIN_ON_CHANNEL_COMPLETE_EVENT_ID);
+		if (ret < 0) {
+			wl1271_error("cmd roc event completion error");
+			goto out;
+		}
 	}
 
 	__set_bit(role_id, wl->roc_map);
