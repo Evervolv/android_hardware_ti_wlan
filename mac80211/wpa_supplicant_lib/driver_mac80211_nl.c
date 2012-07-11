@@ -12,7 +12,6 @@
 #include <netlink/msg.h>
 #include <netlink/attr.h>
 
-#include "linux_wext.h"
 #include "common.h"
 #include "driver.h"
 #include "eloop.h"

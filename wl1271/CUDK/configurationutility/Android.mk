@@ -107,4 +107,6 @@ endif
 
 LOCAL_MODULE:= wlan_cu
 
+LOCAL_MODULE_TAGS := optional
+
 include $(BUILD_EXECUTABLE)
