@@ -11,26 +11,33 @@
 #include <net/dst.h>
 #include <net/genetlink.h>
 #include <linux/ethtool.h>
+#include <net/sock.h>
 
-/*
- * These macros allow us to backport rfkill without any
- * changes on cfg80211 through compat.diff. Note that this
- * file will be included by rfkill_backport.h so we must
- * not conflict with things there.
- */
-#define rfkill_get_led_trigger_name	backport_rfkill_get_led_trigger_name
-#define rfkill_set_led_trigger_name	backport_rfkill_set_led_trigger_name
-#define rfkill_set_hw_state	backport_rfkill_set_hw_state
-#define rfkill_set_sw_state	backport_rfkill_set_sw_state
-#define rfkill_init_sw_state	backport_rfkill_init_sw_state
-#define rfkill_set_states	backport_rfkill_set_states
-#define rfkill_pause_polling	backport_rfkill_pause_polling
-#define rfkill_resume_polling	backport_rfkill_resume_polling
-#define rfkill_blocked		backport_rfkill_blocked
-#define rfkill_alloc		backport_rfkill_alloc
-#define rfkill_register		backport_rfkill_register
-#define rfkill_unregister	backport_rfkill_unregister
-#define rfkill_destroy		backport_rfkill_destroy
+#define SUPPORTED_Backplane            (1 << 16)
+#define SUPPORTED_1000baseKX_Full      (1 << 17)
+#define SUPPORTED_10000baseKX4_Full    (1 << 18)
+#define SUPPORTED_10000baseKR_Full     (1 << 19)
+#define SUPPORTED_10000baseR_FEC       (1 << 20)
+
+#define ADVERTISED_Backplane           (1 << 16)
+#define ADVERTISED_1000baseKX_Full     (1 << 17)
+#define ADVERTISED_10000baseKX4_Full   (1 << 18)
+#define ADVERTISED_10000baseKR_Full    (1 << 19)
+#define ADVERTISED_10000baseR_FEC      (1 << 20)
+
+#define rfkill_get_led_trigger_name LINUX_BACKPORT(rfkill_get_led_trigger_name)
+#define rfkill_set_led_trigger_name LINUX_BACKPORT(rfkill_set_led_trigger_name)
+#define rfkill_set_hw_state LINUX_BACKPORT(rfkill_set_hw_state)
+#define rfkill_set_sw_state LINUX_BACKPORT(rfkill_set_sw_state)
+#define rfkill_init_sw_state LINUX_BACKPORT(rfkill_init_sw_state)
+#define rfkill_set_states LINUX_BACKPORT(rfkill_set_states)
+#define rfkill_pause_polling LINUX_BACKPORT(rfkill_pause_polling)
+#define rfkill_resume_polling LINUX_BACKPORT(rfkill_resume_polling)
+#define rfkill_blocked LINUX_BACKPORT(rfkill_blocked)
+#define rfkill_alloc LINUX_BACKPORT(rfkill_alloc)
+#define rfkill_register LINUX_BACKPORT(rfkill_register)
+#define rfkill_unregister LINUX_BACKPORT(rfkill_unregister)
+#define rfkill_destroy LINUX_BACKPORT(rfkill_destroy)
 
 #ifndef ERFKILL
 #if !defined(CONFIG_ALPHA) && !defined(CONFIG_MIPS) && !defined(CONFIG_PARISC) && !defined(CONFIG_SPARC)
@@ -49,6 +56,15 @@
 #define ERFKILL		134	/* Operation not possible due to RF-kill */
 #endif
 #endif
+
+#define mdio45_probe LINUX_BACKPORT(mdio45_probe)
+#define mdio_set_flag LINUX_BACKPORT(mdio_set_flag)
+#define mdio45_links_ok LINUX_BACKPORT(mdio45_links_ok)
+#define mdio45_nway_restart LINUX_BACKPORT(mdio45_nway_restart)
+
+#define mdio45_ethtool_gset_npage LINUX_BACKPORT(mdio45_ethtool_gset_npage)
+#define mdio45_ethtool_spauseparam_an LINUX_BACKPORT(mdio45_ethtool_spauseparam_an)
+#define mdio_mii_ioctl LINUX_BACKPORT(mdio_mii_ioctl)
 
 #ifndef NETDEV_PRE_UP
 #define NETDEV_PRE_UP		0x000D
@@ -208,13 +224,49 @@ typedef struct {
 	long long counter;
 } atomic64_t;
 
+#define atomic64_read LINUX_BACKPORT(atomic64_read)
 extern long long atomic64_read(const atomic64_t *v);
+#define atomic64_add_return LINUX_BACKPORT(atomic64_add_return)
 extern long long atomic64_add_return(long long a, atomic64_t *v);
 
 #define atomic64_inc_return(v)          atomic64_add_return(1LL, (v))
 
 #endif
 
+/**
+ * sk_rmem_alloc_get - returns read allocations
+ * @sk: socket
+ *
+ * Returns sk_rmem_alloc
+ */
+static inline int sk_rmem_alloc_get(const struct sock *sk)
+{
+	return atomic_read(&sk->sk_rmem_alloc);
+}
+
+/**
+ * sk_wmem_alloc_get - returns write allocations
+ * @sk: socket
+ *
+ * Returns sk_wmem_alloc minus initial offset of one
+ */
+static inline int sk_wmem_alloc_get(const struct sock *sk)
+{
+	return atomic_read(&sk->sk_wmem_alloc) - 1;
+}
+
+/**
+ * sk_has_allocations - check if allocations are outstanding
+ * @sk: socket
+ *
+ * Returns true if socket has write or read allocations
+ */
+static inline bool sk_has_allocations(const struct sock *sk)
+{
+	return sk_wmem_alloc_get(sk) || sk_rmem_alloc_get(sk);
+}
+
+#define USB_SUBCLASS_VENDOR_SPEC	0xff
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)) */
 

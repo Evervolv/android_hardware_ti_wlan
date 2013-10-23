@@ -8,6 +8,7 @@
 #include <linux/netdevice.h>
 #include <linux/usb.h>
 #include <linux/mmc/sdio_func.h>
+#include <net/sock.h>
 
 /*
  * Backports da68c4eb25
@@ -24,13 +25,14 @@ typedef unsigned int mmc_pm_flag_t;
 extern mmc_pm_flag_t sdio_get_host_pm_caps(struct sdio_func *func);
 extern int sdio_set_host_pm_flags(struct sdio_func *func, mmc_pm_flag_t flags);
 
-void init_compat_mmc_pm_flags(void);
-
 #define netdev_mc_count(dev) ((dev)->mc_count)
 #define netdev_mc_empty(dev) (netdev_mc_count(dev) == 0)
 
+/* mask netdev_for_each_mc_addr as RHEL6 backports this */
+#if !defined(netdev_for_each_mc_addr)
 #define netdev_for_each_mc_addr(mclist, dev) \
 	for (mclist = dev->mc_list; mclist; mclist = mclist->next)
+#endif
 /* source: include/linux/netdevice.h */
 
 
@@ -234,6 +236,8 @@ do {							\
 #define sysfs_attr_init(attr) do {} while(0)
 #endif
 
+/* mask sysfs_bin_attr_init as RHEL6 backports this */
+#if !defined(sysfs_bin_attr_init)
 /**
  *	sysfs_bin_attr_init - initialize a dynamically allocated bin_attribute
  *	@attr: struct bin_attribute to initialize
@@ -245,6 +249,7 @@ do {							\
  *	added to sysfs if you don't have this.
  */
 #define sysfs_bin_attr_init(bin_attr) sysfs_attr_init(&(bin_attr)->attr)
+#endif
 
 #define usb_alloc_coherent(dev, size, mem_flags, dma) usb_buffer_alloc(dev, size, mem_flags, dma)
 #define usb_free_coherent(dev, size, addr, dma) usb_buffer_free(dev, size, addr, dma)
@@ -319,11 +324,20 @@ static inline int lockdep_rtnl_is_held(void)
 }
 #endif /* #ifdef CONFIG_PROVE_LOCKING */
 
-#else /* Kernels >= 2.6.34 */
+#define seq_hlist_start_head LINUX_BACKPORT(seq_hlist_start_head)
+extern struct hlist_node *seq_hlist_start_head(struct hlist_head *head,
+					       loff_t pos);
 
-static inline void init_compat_mmc_pm_flags(void)
+#define seq_hlist_next LINUX_BACKPORT(seq_hlist_next)
+extern struct hlist_node *seq_hlist_next(void *v, struct hlist_head *head,
+					 loff_t *ppos);
+
+static inline struct sock *sk_entry(const struct hlist_node *node)
 {
+	return hlist_entry(node, struct sock, sk_node);
 }
+
+#else /* Kernels >= 2.6.34 */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)) */
 

@@ -9,6 +9,21 @@
 #include <linux/skbuff.h>
 #include <net/ip.h>
 #include <linux/idr.h>
+#include <asm/div64.h>
+
+#define HID_TYPE_USBNONE 2
+
+/* This backports:
+ *
+ * commit 36a26c69b4c70396ef569c3452690fba0c1dec08
+ * Author: Nicholas Bellinger <nab@linux-iscsi.org>
+ * Date:   Tue Jul 26 00:35:26 2011 -0700
+ *
+ * 	kernel.h: Add DIV_ROUND_UP_ULL and DIV_ROUND_UP_SECTOR_T macro usage
+ */
+
+#define DIV_ROUND_UP_ULL(ll,d) \
+	({ unsigned long long _tmp = (ll)+(d)-1; do_div(_tmp, d); _tmp; })
 
 /* Backports 56f8a75c */
 static inline bool ip_is_fragment(const struct iphdr *iph)
@@ -16,6 +31,8 @@ static inline bool ip_is_fragment(const struct iphdr *iph)
 	return (iph->frag_off & htons(IP_MF | IP_OFFSET)) != 0;
 }
 
+/* mask __netdev_alloc_skb_ip_align as RHEL6 backports this */
+#define __netdev_alloc_skb_ip_align(a,b,c) compat__netdev_alloc_skb_ip_align(a,b,c)
 static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev,
 							  unsigned int length, gfp_t gfp)
 {
@@ -26,19 +43,6 @@ static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev
 	return skb;
 }
 
-/*
- * Getting something that works in C and CPP for an arg that may or may
- * not be defined is tricky.  Here, if we have "#define CONFIG_BOOGER 1"
- * we match on the placeholder define, insert the "0," for arg1 and generate
- * the triplet (0, 1, 0).  Then the last step cherry picks the 2nd arg (a one).
- * When CONFIG_BOOGER is not defined, we generate a (... 1, 0) pair, and when
- * the last step cherry picks the 2nd arg, we get a zero.
- */
-#define __ARG_PLACEHOLDER_1 0,
-#define config_enabled(cfg) _config_enabled(cfg)
-#define _config_enabled(value) __config_enabled(__ARG_PLACEHOLDER_##value)
-#define __config_enabled(arg1_or_junk) ___config_enabled(arg1_or_junk 1, 0)
-#define ___config_enabled(__ignored, val, ...) val
 #define genl_dump_check_consistent(cb, user_hdr, family)
 
 /*
@@ -84,9 +88,20 @@ static inline void security_sk_clone(const struct sock *sk, struct sock *newsk)
 #include <asm-generic/atomic64.h>
 #endif
 
+#define ida_simple_get LINUX_BACKPORT(ida_simple_get)
 int ida_simple_get(struct ida *ida, unsigned int start, unsigned int end,
 		   gfp_t gfp_mask);
+
+#define ida_simple_remove LINUX_BACKPORT(ida_simple_remove)
 void ida_simple_remove(struct ida *ida, unsigned int id);
+
+#ifdef CONFIG_CPU_FREQ
+#define cpufreq_quick_get_max LINUX_BACKPORT(cpufreq_quick_get_max)
+unsigned int cpufreq_quick_get_max(unsigned int cpu);
+#endif
+
+struct watchdog_device {
+};
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,1,0)) */
 

@@ -102,48 +102,63 @@ static void ieee80211_offchannel_ps_disable(struct ieee80211_sub_if_data *sdata)
 	ieee80211_sta_reset_conn_monitor(sdata);
 }
 
-void ieee80211_offchannel_stop_vifs(struct ieee80211_local *local,
-				    bool offchannel_ps_enable)
+void ieee80211_offchannel_stop_vifs(struct ieee80211_local *local)
 {
 	struct ieee80211_sub_if_data *sdata;
+
+	if (WARN_ON(local->use_chanctx))
+		return;
 
 	/*
 	 * notify the AP about us leaving the channel and stop all
 	 * STA interfaces.
 	 */
+
+	/*
+	 * Stop queues and transmit all frames queued by the driver
+	 * before sending nullfunc to enable powersave at the AP.
+	 */
+	ieee80211_stop_queues_by_reason(&local->hw, IEEE80211_MAX_QUEUE_MAP,
+					IEEE80211_QUEUE_STOP_REASON_OFFCHANNEL);
+	ieee80211_flush_queues(local, NULL);
+
 	mutex_lock(&local->iflist_mtx);
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		if (!ieee80211_sdata_running(sdata))
+			continue;
+		if (sdata->vif.type == NL80211_IFTYPE_P2P_DEVICE)
 			continue;
 #if 0
 		if (sdata->vif.type != NL80211_IFTYPE_MONITOR)
 			set_bit(SDATA_STATE_OFFCHANNEL, &sdata->state);
 
 		/* Check to see if we should disable beaconing. */
-		if (sdata->vif.type == NL80211_IFTYPE_AP ||
-		    sdata->vif.type == NL80211_IFTYPE_ADHOC ||
-		    sdata->vif.type == NL80211_IFTYPE_MESH_POINT)
+		if (sdata->vif.bss_conf.enable_beacon) {
+			set_bit(SDATA_STATE_OFFCHANNEL_BEACON_STOPPED,
+				&sdata->state);
+			sdata->vif.bss_conf.enable_beacon = false;
 			ieee80211_bss_info_change_notify(
 				sdata, BSS_CHANGED_BEACON_ENABLED);
-#endif
-		if (sdata->vif.type != NL80211_IFTYPE_MONITOR) {
-			netif_tx_stop_all_queues(sdata->dev);
-			if (offchannel_ps_enable &&
-			    (sdata->vif.type == NL80211_IFTYPE_STATION) &&
-			    sdata->u.mgd.associated)
-				ieee80211_offchannel_ps_enable(sdata);
 		}
+#endif
+		if (sdata->vif.type == NL80211_IFTYPE_STATION &&
+		    sdata->u.mgd.associated)
+			ieee80211_offchannel_ps_enable(sdata);
 	}
 	mutex_unlock(&local->iflist_mtx);
 }
 
-void ieee80211_offchannel_return(struct ieee80211_local *local,
-				 bool offchannel_ps_disable)
+void ieee80211_offchannel_return(struct ieee80211_local *local)
 {
 	struct ieee80211_sub_if_data *sdata;
 
+	if (WARN_ON(local->use_chanctx))
+		return;
+
 	mutex_lock(&local->iflist_mtx);
 	list_for_each_entry(sdata, &local->interfaces, list) {
+		if (sdata->vif.type == NL80211_IFTYPE_P2P_DEVICE)
+			continue;
 #if 0
 		if (sdata->vif.type != NL80211_IFTYPE_MONITOR)
 			clear_bit(SDATA_STATE_OFFCHANNEL, &sdata->state);
@@ -152,34 +167,22 @@ void ieee80211_offchannel_return(struct ieee80211_local *local,
 			continue;
 
 		/* Tell AP we're back */
-		if (offchannel_ps_disable &&
-		    sdata->vif.type == NL80211_IFTYPE_STATION) {
-			if (sdata->u.mgd.associated)
-				ieee80211_offchannel_ps_disable(sdata);
-		}
-
-		if (sdata->vif.type != NL80211_IFTYPE_MONITOR) {
-			/*
-			 * This may wake up queues even though the driver
-			 * currently has them stopped. This is not very
-			 * likely, since the driver won't have gotten any
-			 * (or hardly any) new packets while we weren't
-			 * on the right channel, and even if it happens
-			 * it will at most lead to queueing up one more
-			 * packet per queue in mac80211 rather than on
-			 * the interface qdisc.
-			 */
-			netif_tx_wake_all_queues(sdata->dev);
-		}
+		if (sdata->vif.type == NL80211_IFTYPE_STATION &&
+		    sdata->u.mgd.associated)
+			ieee80211_offchannel_ps_disable(sdata);
 #if 0
-		if (sdata->vif.type == NL80211_IFTYPE_AP ||
-		    sdata->vif.type == NL80211_IFTYPE_ADHOC ||
-		    sdata->vif.type == NL80211_IFTYPE_MESH_POINT)
+		if (test_and_clear_bit(SDATA_STATE_OFFCHANNEL_BEACON_STOPPED,
+				       &sdata->state)) {
+			sdata->vif.bss_conf.enable_beacon = true;
 			ieee80211_bss_info_change_notify(
 				sdata, BSS_CHANGED_BEACON_ENABLED);
+		}
 #endif
 	}
 	mutex_unlock(&local->iflist_mtx);
+
+	ieee80211_wake_queues_by_reason(&local->hw, IEEE80211_MAX_QUEUE_MAP,
+					IEEE80211_QUEUE_STOP_REASON_OFFCHANNEL);
 }
 
 void ieee80211_handle_roc_started(struct ieee80211_roc_work *roc)
@@ -189,13 +192,14 @@ void ieee80211_handle_roc_started(struct ieee80211_roc_work *roc)
 
 	if (roc->mgmt_tx_cookie) {
 		if (!WARN_ON(!roc->frame)) {
-			ieee80211_tx_skb(roc->sdata, roc->frame);
+			ieee80211_tx_skb_tid_band(roc->sdata, roc->frame, 7,
+						  roc->chan->band);
 			roc->frame = NULL;
 		}
 	} else {
-		cfg80211_ready_on_channel(&roc->sdata->wdev, (unsigned long)roc,
-					  roc->chan, roc->chan_type,
-					  roc->req_duration, GFP_KERNEL);
+		cfg80211_ready_on_channel(&roc->sdata->wdev, roc->cookie,
+					  roc->chan, roc->req_duration,
+					  GFP_KERNEL);
 	}
 
 	roc->notified = true;
@@ -229,8 +233,7 @@ static void ieee80211_hw_roc_start(struct work_struct *work)
 			u32 dur = dep->duration;
 			dep->duration = dur - roc->duration;
 			roc->duration = dur;
-			list_del(&dep->list);
-			list_add(&dep->list, &roc->list);
+			list_move(&dep->list, &roc->list);
 		}
 	}
  out_unlock:
@@ -274,8 +277,7 @@ void ieee80211_start_next_roc(struct ieee80211_local *local)
 			duration = 10;
 
 		ret = drv_remain_on_channel(local, roc->sdata, roc->chan,
-					    roc->chan_type,
-					    duration);
+					    duration, roc->type, (unsigned long) roc);
 
 		roc->started = true;
 
@@ -286,7 +288,8 @@ void ieee80211_start_next_roc(struct ieee80211_local *local)
 			 * queue the work struct again to avoid recursion
 			 * when multiple failures occur
 			 */
-			ieee80211_remain_on_channel_expired(&local->hw);
+			ieee80211_remain_on_channel_expired(&local->hw,
+						(unsigned long) roc);
 		}
 	} else {
 		/* delay it a bit */
@@ -295,9 +298,12 @@ void ieee80211_start_next_roc(struct ieee80211_local *local)
 	}
 }
 
-void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
+void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc, bool free)
 {
 	struct ieee80211_roc_work *dep, *tmp;
+
+	if (WARN_ON(roc->to_be_freed))
+		return;
 
 	/* was never transmitted */
 	if (roc->frame) {
@@ -310,14 +316,16 @@ void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
 
 	if (!roc->mgmt_tx_cookie)
 		cfg80211_remain_on_channel_expired(&roc->sdata->wdev,
-						   (unsigned long)roc,
-						   roc->chan, roc->chan_type,
+						   roc->cookie, roc->chan,
 						   GFP_KERNEL);
 
 	list_for_each_entry_safe(dep, tmp, &roc->dependents, list)
-		ieee80211_roc_notify_destroy(dep);
+		ieee80211_roc_notify_destroy(dep, true);
 
-	kfree(roc);
+	if (free)
+		kfree(roc);
+	else
+		roc->to_be_freed = true;
 }
 
 void ieee80211_sw_roc_work(struct work_struct *work)
@@ -329,6 +337,9 @@ void ieee80211_sw_roc_work(struct work_struct *work)
 	bool started;
 
 	mutex_lock(&local->mtx);
+
+	if (roc->to_be_freed)
+		goto out_unlock;
 
 	if (roc->abort)
 		goto finish;
@@ -349,8 +360,7 @@ void ieee80211_sw_roc_work(struct work_struct *work)
 		/* switch channel etc */
 		ieee80211_recalc_idle(local);
 
-		sdata->tmp_channel = roc->chan;
-		local->tmp_channel_type = roc->chan_type;
+		local->tmp_channel = roc->chan;
 		ieee80211_hw_config(local, 0);
 
 		/* tell userspace or send frame */
@@ -370,15 +380,15 @@ void ieee80211_sw_roc_work(struct work_struct *work)
  finish:
 		list_del(&roc->list);
 		started = roc->started;
-		ieee80211_roc_notify_destroy(roc);
+		ieee80211_roc_notify_destroy(roc, !roc->abort);
 
 		if (started) {
-			drv_flush(local, false);
+			ieee80211_flush_queues(local, NULL);
 
-			sdata->tmp_channel = NULL;
+			local->tmp_channel = NULL;
 			ieee80211_hw_config(local, 0);
 
-			ieee80211_offchannel_return(local, true);
+			ieee80211_offchannel_return(local);
 		}
 
 		ieee80211_recalc_idle(local);
@@ -408,9 +418,12 @@ static void ieee80211_hw_roc_done(struct work_struct *work)
 	if (!roc->started)
 		goto out_unlock;
 
+	if (local->expired_roc_cookie != (unsigned long) roc)
+		goto out_unlock;
+
 	list_del(&roc->list);
 
-	ieee80211_roc_notify_destroy(roc);
+	ieee80211_roc_notify_destroy(roc, true);
 
 	/* if there's another roc, start it now */
 	ieee80211_start_next_roc(local);
@@ -419,11 +432,13 @@ static void ieee80211_hw_roc_done(struct work_struct *work)
 	mutex_unlock(&local->mtx);
 }
 
-void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw)
+void ieee80211_remain_on_channel_expired(struct ieee80211_hw *hw, u64 cookie)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 
 	trace_api_remain_on_channel_expired(local);
+
+	local->expired_roc_cookie = cookie;
 
 	ieee80211_queue_work(hw, &local->hw_roc_done);
 }
@@ -436,15 +451,15 @@ void ieee80211_roc_setup(struct ieee80211_local *local)
 	INIT_LIST_HEAD(&local->roc_list);
 }
 
-void ieee80211_roc_purge(struct ieee80211_sub_if_data *sdata)
+void ieee80211_roc_purge(struct ieee80211_local *local,
+			 struct ieee80211_sub_if_data *sdata)
 {
-	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_roc_work *roc, *tmp;
 	LIST_HEAD(tmp_list);
 
 	mutex_lock(&local->mtx);
 	list_for_each_entry_safe(roc, tmp, &local->roc_list, list) {
-		if (roc->sdata != sdata)
+		if (sdata && roc->sdata != sdata)
 			continue;
 
 		if (roc->started && local->ops->remain_on_channel) {
@@ -455,19 +470,19 @@ void ieee80211_roc_purge(struct ieee80211_sub_if_data *sdata)
 		list_move_tail(&roc->list, &tmp_list);
 		roc->abort = true;
 	}
-
-	ieee80211_start_next_roc(local);
 	mutex_unlock(&local->mtx);
 
 	list_for_each_entry_safe(roc, tmp, &tmp_list, list) {
 		if (local->ops->remain_on_channel) {
 			list_del(&roc->list);
-			ieee80211_roc_notify_destroy(roc);
+			ieee80211_roc_notify_destroy(roc, true);
 		} else {
 			ieee80211_queue_delayed_work(&local->hw, &roc->work, 0);
 
 			/* work will clean up etc */
 			flush_delayed_work(&roc->work);
+			WARN_ON(!roc->to_be_freed);
+			kfree(roc);
 		}
 	}
 

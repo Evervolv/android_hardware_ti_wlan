@@ -7,6 +7,7 @@
 
 #include <linux/skbuff.h>
 #include <linux/pci.h>
+#include <linux/usb.h>
 #if defined(CONFIG_PCCARD) || defined(CONFIG_PCCARD_MODULE)
 #include <pcmcia/cs_types.h>
 #include <pcmcia/cistpl.h>
@@ -15,29 +16,44 @@
 #include <linux/firmware.h>
 #include <linux/input.h>
 
-#if defined(CONFIG_FW_LOADER) || defined(CONFIG_FW_LOADER_MODULE)
-#define release_firmware compat_release_firmware
-#define request_firmware compat_request_firmware
-#define request_firmware_nowait compat_request_firmware_nowait
-#endif
+#define usb_autopm_get_interface_no_resume LINUX_BACKPORT(usb_autopm_get_interface_no_resume)
+#define usb_autopm_put_interface_no_suspend LINUX_BACKPORT(usb_autopm_put_interface_no_suspend)
+#ifdef CONFIG_USB_SUSPEND
+extern void usb_autopm_get_interface_no_resume(struct usb_interface *intf);
+extern void usb_autopm_put_interface_no_suspend(struct usb_interface *intf);
+#else
+static inline void usb_autopm_get_interface_no_resume(struct usb_interface *intf)
+{
+	atomic_inc(&intf->pm_usage_cnt);
+}
+static inline void usb_autopm_put_interface_no_suspend(struct usb_interface *intf)
+{
+	atomic_dec(&intf->pm_usage_cnt);
+}
+#endif /* CONFIG_USB_SUSPEND */
+
+#if defined(CONFIG_COMPAT_FIRMWARE_CLASS)
+#define request_firmware_nowait LINUX_BACKPORT(request_firmware_nowait)
+#define request_firmware LINUX_BACKPORT(request_firmware)
+#define release_firmware LINUX_BACKPORT(release_firmware)
 
 #if defined(CONFIG_FW_LOADER) || defined(CONFIG_FW_LOADER_MODULE)
-int compat_request_firmware(const struct firmware **fw, const char *name,
+int request_firmware(const struct firmware **fw, const char *name,
 		     struct device *device);
-int compat_request_firmware_nowait(
+int request_firmware_nowait(
 	struct module *module, int uevent,
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context));
 
-void compat_release_firmware(const struct firmware *fw);
+void release_firmware(const struct firmware *fw);
 #else
-static inline int compat_request_firmware(const struct firmware **fw,
+static inline int request_firmware(const struct firmware **fw,
 				   const char *name,
 				   struct device *device)
 {
 	return -EINVAL;
 }
-static inline int compat_request_firmware_nowait(
+static inline int request_firmware_nowait(
 	struct module *module, int uevent,
 	const char *name, struct device *device, gfp_t gfp, void *context,
 	void (*cont)(const struct firmware *fw, void *context))
@@ -45,9 +61,10 @@ static inline int compat_request_firmware_nowait(
 	return -EINVAL;
 }
 
-static inline void compat_release_firmware(const struct firmware *fw)
+static inline void release_firmware(const struct firmware *fw)
 {
 }
+#endif
 #endif
 
 /* mask KEY_RFKILL as RHEL6 backports this */
@@ -55,11 +72,17 @@ static inline void compat_release_firmware(const struct firmware *fw)
 #define KEY_RFKILL		247	/* Key that controls all radios */
 #endif
 
+/* mask IFF_DONT_BRIDGE as RHEL6 backports this */
+#if !defined(IFF_DONT_BRIDGE)
 #define IFF_DONT_BRIDGE 0x800		/* disallow bridging this ether dev */
 /* source: include/linux/if.h */
+#endif
 
+/* mask NETDEV_POST_INIT as RHEL6 backports this */
 /* this will never happen on older kernels */
+#if !defined(NETDEV_POST_INIT)
 #define NETDEV_POST_INIT 0xffff
+#endif
 
 /* mask netdev_alloc_skb_ip_align as debian squeeze also backports this */
 #define netdev_alloc_skb_ip_align(a, b) compat_netdev_alloc_skb_ip_align(a, b)
@@ -83,6 +106,7 @@ static inline struct sk_buff *netdev_alloc_skb_ip_align(struct net_device *dev,
 #define pcmcia_map_mem_page(a, b, c) pcmcia_map_mem_page(b, c)
 
 /* loop over CIS entries */
+#define pcmcia_loop_tuple LINUX_BACKPORT(pcmcia_loop_tuple)
 int pcmcia_loop_tuple(struct pcmcia_device *p_dev, cisdata_t code,
 		      int (*loop_tuple) (struct pcmcia_device *p_dev,
 					 tuple_t *tuple,
@@ -92,6 +116,7 @@ int pcmcia_loop_tuple(struct pcmcia_device *p_dev, cisdata_t code,
 #endif /* CONFIG_PCMCIA */
 
 /* loop over CIS entries */
+#define pccard_loop_tuple LINUX_BACKPORT(pccard_loop_tuple)
 int pccard_loop_tuple(struct pcmcia_socket *s, unsigned int function,
 		      cisdata_t code, cisparse_t *parse, void *priv_data,
 		      int (*loop_tuple) (tuple_t *tuple,
@@ -166,6 +191,19 @@ static inline long __must_check IS_ERR_OR_NULL(const void *ptr)
 {
 	return !ptr || IS_ERR_VALUE((unsigned long)ptr);
 }
+
+#if (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,32))
+#undef SIMPLE_DEV_PM_OPS
+#define SIMPLE_DEV_PM_OPS(name, suspend_fn, resume_fn) \
+const struct dev_pm_ops name = { \
+	.suspend = suspend_fn, \
+	.resume = resume_fn, \
+	.freeze = suspend_fn, \
+	.thaw = resume_fn, \
+	.poweroff = suspend_fn, \
+	.restore = resume_fn, \
+}
+#endif /* (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,32)) */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,33)) */
 

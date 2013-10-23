@@ -17,7 +17,7 @@ KERNEL_RELEASE=".compat_base_tree_version"
 MULT_DEP_FILE=".compat_pivot_dep"
 
 if [ $# -ne 2 ]; then
-	echo "Usage $0 <generic-compat-config-file> <compat-wireless-config-file>"
+	echo "Usage $0 <generic-compat-config-file> <compat-drivers-config-file>"
 	exit
 fi
 
@@ -57,29 +57,35 @@ function define_config {
 		echo "#define $VAR 1"
 		echo "#endif /* $VAR */ "
 		;;
-	*) # Assume string
-		# XXX: add better checks to make sure what was on
-		# the right was indeed a string
+	[0-9]*)
+		# Leave integers as is
+		echo "#ifndef $VAR"
+		echo "#define $VAR $VALUE"
+		echo "#endif /* $VAR */ "
+		;;
+	*)
+		# Escape every other thing with double quotes
 		echo "#ifndef $VAR"
 		echo "#define $VAR \"$VALUE\""
 		echo "#endif /* $VAR */ "
 		;;
+
 	esac
 }
 
-# This deals with core compat-wireless kernel requirements.
+# This deals with core compat-drivers kernel requirements.
 function define_config_req {
 	VAR=$1
 	echo "#ifndef $VAR"
-	echo -n "#error Compat-wireless requirement: $VAR must be enabled "
+	echo -n "#error Compat-drivers requirement: $VAR must be enabled "
 	echo "in your kernel"
 	echo "#endif /* $VAR */"
 }
 
 # This handles modules which have dependencies from the kernel
-# which compat-wireless isn't providing yet either because
+# which compat-drivers isn't providing yet either because
 # the dependency is not available as kernel module or
-# the module simply isn't provided by compat-wireless.
+# the module simply isn't provided by compat-drivers.
 function define_config_dep {
 	VAR=$1
 	VALUE=$2
@@ -135,8 +141,8 @@ cat <<EOF
 /*
  * Automatically generated C config: don't edit
  * $DATE 
- * compat-wireless-2.6: $CREL
- * linux-2.6: $KREL
+ * compat-drivers: $CREL
+ * linux: $KREL
  */
 #define COMPAT_RELEASE "$CREL"
 #define COMPAT_KERNEL_RELEASE "$KREL"
@@ -151,11 +157,11 @@ for i in $(egrep -h '^export CONFIG_|^ifdef CONFIG_|^ifndef CONFIG_|^endif #CONF
 	sed 's/ /+/'); do
 	case $i in
 	'ifdef+CONFIG_'* )
-		echo "#$i" | sed -e 's/+/ /' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_3_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(3,\2,0))/' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_2_6_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,\2))/' -e 's/\(ifdef CONFIG_COMPAT_RHEL_\)\([0-9]*\)_\([0-9]*\)/if (defined(RHEL_MAJOR) \&\& RHEL_MAJOR == \2 \&\& RHEL_MINOR >= \3)/' -e 's/\(#ifdef \)\(CONFIG_[[^:space:]]*\)/#if defined(\2) || defined(\2_MODULE)/'
+		echo "#$i" | sed -e 's/+/ /' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_3_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(3,\2,0))/' -e 's/\(ifdef CONFIG_COMPAT_KERNEL_2_6_\)\([0-9]*\)/if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,\2))/' -e 's/\(ifdef CONFIG_COMPAT_RHEL_\)\([0-9]*\)_\([0-9]*\)/if (defined(RHEL_MAJOR) \&\& RHEL_MAJOR == \2 \&\& RHEL_MINOR >= \3)/' -e 's/\(#ifdef \)\(CONFIG_[^:space:]*\)/#if defined(\2) || defined(\2_MODULE)/'
 		continue
 		;;
 	'ifndef+CONFIG_'* )
-		echo "#$i" | sed -e 's/+/ /' -e 's/\(ifndef CONFIG_COMPAT_KERNEL_3_\)\([0-9]*\)/if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,\2,0))/' -e 's/\(ifndef CONFIG_COMPAT_KERNEL_2_6_\)\([0-9]*\)/if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,\2))/' -e 's/\(ifndef CONFIG_COMPAT_RHEL_\)\([0-9]*\)_\([0-9]*\)/if (!defined(RHEL_MAJOR) || RHEL_MAJOR != \2 || RHEL_MINOR < \3)/' -e 's/\(#ifndef \)\(CONFIG_[[^:space:]]*\)/#if !defined(\2) \&\& !defined(\2_MODULE)/'
+		echo "#$i" | sed -e 's/+/ /' -e 's/\(ifndef CONFIG_COMPAT_KERNEL_3_\)\([0-9]*\)/if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,\2,0))/' -e 's/\(ifndef CONFIG_COMPAT_KERNEL_2_6_\)\([0-9]*\)/if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,\2))/' -e 's/\(ifndef CONFIG_COMPAT_RHEL_\)\([0-9]*\)_\([0-9]*\)/if (!defined(RHEL_MAJOR) || RHEL_MAJOR != \2 || RHEL_MINOR < \3)/' -e 's/\(#ifndef \)\(CONFIG_[^:space:]*\)/#if !defined(\2) \&\& !defined(\2_MODULE)/'
 		continue
 		;;
 	'else+#CONFIG_'* | 'endif+#CONFIG_'* )

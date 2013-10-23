@@ -162,7 +162,8 @@ int wl1271_acx_mem_map(struct wl1271 *wl, struct acx_header *mem_map,
 
 	wl1271_debug(DEBUG_ACX, "acx mem map");
 
-	ret = wl1271_cmd_interrogate(wl, ACX_MEM_MAP, mem_map, len);
+	ret = wl1271_cmd_interrogate(wl, ACX_MEM_MAP, mem_map,
+				sizeof(struct acx_header), len);
 	if (ret < 0)
 		return ret;
 
@@ -722,7 +723,7 @@ int wl1271_acx_statistics(struct wl1271 *wl, void *stats)
 	wl1271_debug(DEBUG_ACX, "acx statistics");
 
 	ret = wl1271_cmd_interrogate(wl, ACX_STATISTICS, stats,
-				     wl->stats.fw_stats_len);
+			sizeof(struct acx_header), wl->stats.fw_stats_len);
 	if (ret < 0) {
 		wl1271_warning("acx statistics failed: %d", ret);
 		return -ENOMEM;
@@ -1340,6 +1341,8 @@ out:
 	kfree(acx);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(wl1271_acx_set_ht_capabilities);
+
 
 int wl1271_acx_set_ht_information(struct wl1271 *wl,
 				   struct wl12xx_vif *wlvif,
@@ -1414,7 +1417,8 @@ out:
 
 /* setup BA session receiver setting in the FW. */
 int wl12xx_acx_set_ba_receiver_session(struct wl1271 *wl, u8 tid_index,
-				       u16 ssn, bool enable, u8 peer_hlid)
+				       u16 ssn, bool enable, u8 peer_hlid,
+				       u8 win_size)
 {
 	struct wl1271_acx_ba_receiver_setup *acx;
 	int ret;
@@ -1430,7 +1434,7 @@ int wl12xx_acx_set_ba_receiver_session(struct wl1271 *wl, u8 tid_index,
 	acx->hlid = peer_hlid;
 	acx->tid = tid_index;
 	acx->enable = enable;
-	acx->win_size = wl->conf.ht.rx_ba_win_size;
+	acx->win_size =	win_size;
 	acx->ssn = ssn;
 
 	ret = wlcore_cmd_configure_failsafe(wl, ACX_BA_SESSION_RX_SETUP, acx,
@@ -1441,8 +1445,13 @@ int wl12xx_acx_set_ba_receiver_session(struct wl1271 *wl, u8 tid_index,
 		goto out;
 	}
 
-	if (ret == CMD_STATUS_NO_RX_BA_SESSION)
+	/* sometimes we can't start the session */
+	if (ret == CMD_STATUS_NO_RX_BA_SESSION) {
 		wl1271_warning("no fw rx ba on tid %d", tid_index);
+		ret = -EBUSY;
+		goto out;
+	}
+
 	ret = 0;
 out:
 	kfree(acx);
@@ -1463,8 +1472,8 @@ int wl12xx_acx_tsf_info(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 
 	tsf_info->role_id = wlvif->role_id;
 
-	ret = wl1271_cmd_interrogate(wl, ACX_TSF_INFO,
-				     tsf_info, sizeof(*tsf_info));
+	ret = wl1271_cmd_interrogate(wl, ACX_TSF_INFO, tsf_info,
+				sizeof(struct acx_header), sizeof(*tsf_info));
 	if (ret < 0) {
 		wl1271_warning("acx tsf info interrogate failed");
 		goto out;
@@ -1729,13 +1738,13 @@ out:
 
 }
 
-int wlcore_acx_peer_ht_operation_mode(struct wl1271 *wl, u8 hlid, bool wide)
+int wlcore_acx_average_rssi(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			    s8 *avg_rssi)
 {
-	struct wlcore_peer_ht_operation_mode *acx;
-	int ret;
+	struct acx_roaming_stats *acx;
+	int ret = 0;
 
-	wl1271_debug(DEBUG_ACX, "acx peer ht operation mode hlid %d bw %d",
-		     hlid, wide);
+	wl1271_debug(DEBUG_ACX, "acx roaming statistics");
 
 	acx = kzalloc(sizeof(*acx), GFP_KERNEL);
 	if (!acx) {
@@ -1743,21 +1752,19 @@ int wlcore_acx_peer_ht_operation_mode(struct wl1271 *wl, u8 hlid, bool wide)
 		goto out;
 	}
 
-	acx->hlid = hlid;
-	acx->bandwidth = wide ? WLCORE_BANDWIDTH_40MHZ : WLCORE_BANDWIDTH_20MHZ;
-
-	ret = wl1271_cmd_configure(wl, ACX_PEER_HT_OPERATION_MODE_CFG, acx,
-				   sizeof(*acx));
-
-	if (ret < 0) {
-		wl1271_warning("acx peer ht operation mode failed: %d", ret);
+	acx->role_id = wlvif->role_id;
+	ret = wl1271_cmd_interrogate(wl, ACX_ROAMING_STATISTICS_TBL,
+				     acx, sizeof(*acx), sizeof(*acx));
+	if (ret	< 0) {
+		wl1271_warning("acx roaming statistics failed: %d", ret);
+		ret = -ENOMEM;
 		goto out;
 	}
 
+	*avg_rssi = acx->rssi_beacon;
 out:
 	kfree(acx);
 	return ret;
-
 }
 
 #ifdef CONFIG_PM

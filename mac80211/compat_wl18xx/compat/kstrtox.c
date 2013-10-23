@@ -14,10 +14,10 @@
 #include <linux/kernel.h>
 /* 
  * kstrto* was included in kernel 2.6.38.4 and causes conflicts with the
- * version included in compat-wireless. We use strict_strtol to check if
+ * version included in compat-drivers. We use strict_strtol to check if
  * kstrto* is already available.
  */
-#ifndef strict_strtol
+#ifndef strict_strtoll
 
 #include <linux/ctype.h>
 #include <linux/errno.h>

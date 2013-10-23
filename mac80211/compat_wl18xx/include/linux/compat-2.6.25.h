@@ -20,8 +20,88 @@
 #include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/pci.h>
+#include <linux/scatterlist.h>
+#define __inet_lookup_established __inet_lookup_established_old
+#include <net/inet_hashtables.h>
+#undef __inet_lookup_established
+#include <linux/compat-3.9.h>
+
+struct sg_table {
+	struct scatterlist *sgl;        /* the list */
+	unsigned int nents;             /* number of mapped entries */
+	unsigned int orig_nents;        /* original size of list */
+};
+
+#define sg_alloc_fn LINUX_BACKPORT(sg_alloc_fn)
+typedef struct scatterlist *(sg_alloc_fn)(unsigned int, gfp_t);
+
+#define sg_free_fn LINUX_BACKPORT(sg_free_fn)
+typedef void (sg_free_fn)(struct scatterlist *, unsigned int);
+
+#define __sg_free_table LINUX_BACKPORT(__sg_free_table)
+void __sg_free_table(struct sg_table *table, unsigned int max_ents,
+		     sg_free_fn *free_fn);
+#define sg_free_table LINUX_BACKPORT(sg_free_table)
+void sg_free_table(struct sg_table *);
+#define __sg_alloc_table LINUX_BACKPORT(__sg_alloc_table)
+int __sg_alloc_table(struct sg_table *table, unsigned int nents,
+		     unsigned int max_ents, gfp_t gfp_mask,
+		     sg_alloc_fn *alloc_fn);
+#define sg_alloc_table LINUX_BACKPORT(sg_alloc_table)
+int sg_alloc_table(struct sg_table *table, unsigned int nents, gfp_t gfp_mask);
+
+/*
+ * Maximum number of entries that will be allocated in one piece, if
+ * a list larger than this is required then chaining will be utilized.
+ */
+#define SG_MAX_SINGLE_ALLOC            (PAGE_SIZE / sizeof(struct scatterlist))
+
+
+/*
+ * Sockets in TCP_CLOSE state are _always_ taken out of the hash, so we need
+ * not check it for lookups anymore, thanks Alexey. -DaveM
+ *
+ * Local BH must be disabled here.
+ */
+static inline struct sock *
+	__inet_lookup_established(struct inet_hashinfo *hashinfo,
+				  const __be32 saddr, const __be16 sport,
+				  const __be32 daddr, const u16 hnum,
+				  const int dif)
+{
+	INET_ADDR_COOKIE(acookie, saddr, daddr)
+	const __portpair ports = INET_COMBINED_PORTS(sport, hnum);
+	struct sock *sk;
+	/* Optimize here for direct hit, only listening connections can
+	 * have wildcards anyways.
+	 */
+	unsigned int hash = inet_ehashfn(daddr, hnum, saddr, sport);
+	struct inet_ehash_bucket *head = inet_ehash_bucket(hashinfo, hash);
+	rwlock_t *lock = inet_ehash_lockp(hashinfo, hash);
+
+	prefetch(head->chain.first);
+	read_lock(lock);
+	sk_for_each(sk, &head->chain) {
+		if (INET_MATCH(sk, hash, acookie, saddr, daddr, ports, dif))
+			goto hit; /* You sunk my battleship! */
+	}
+
+	/* Must check for a TIME_WAIT'er before going to listener hash. */
+	sk_for_each(sk, &head->twchain) {
+		if (INET_TW_MATCH(sk, hash, acookie, saddr, daddr, ports, dif))
+			goto hit;
+	}
+	sk = NULL;
+out:
+	read_unlock(lock);
+	return sk;
+hit:
+	sock_hold(sk);
+	goto out;
+}
 
 /* Backports b718989da7 */
+#define pci_enable_device_mem LINUX_BACKPORT(pci_enable_device_mem)
 int __must_check pci_enable_device_mem(struct pci_dev *dev);
 
 /*
@@ -146,11 +226,11 @@ typedef u32 phys_addr_t;
  * This pm-qos implementation is copied verbatim from the kernel
  * written by mark gross mgross@linux.intel.com. You don't have
  * to do anythinig to use pm-qos except use the same exported
- * routines as used in newer kernels. The compat_pm_qos_power_init()
+ * routines as used in newer kernels. The backport_pm_qos_power_init()
  * defned below is used by the compat module to initialize pm-qos.
  */
-int compat_pm_qos_power_init(void);
-int compat_pm_qos_power_deinit(void);
+int backport_pm_qos_power_init(void);
+int backport_pm_qos_power_deinit(void);
 
 /*
  * 2.6.25 adds PM_EVENT_HIBERNATE as well here but
@@ -175,7 +255,9 @@ int compat_pm_qos_power_deinit(void);
 #define dev_crit(dev, format, arg...)           \
 	dev_printk(KERN_CRIT , dev , format , ## arg)
 
+#define __dev_addr_sync LINUX_BACKPORT(__dev_addr_sync)
 extern int		__dev_addr_sync(struct dev_addr_list **to, int *to_count, struct dev_addr_list **from, int *from_count);
+#define __dev_addr_unsync LINUX_BACKPORT(__dev_addr_unsync)
 extern void		__dev_addr_unsync(struct dev_addr_list **to, int *to_count, struct dev_addr_list **from, int *from_count);
 
 #define seq_file_net &init_net;
@@ -255,7 +337,9 @@ static inline void led_classdev_unregister_suspended(struct led_classdev *lcd)
  * The following things are out of ./include/linux/kernel.h
  * The new iwlwifi driver is using them.
  */
+#define strict_strtoul LINUX_BACKPORT(strict_strtoul)
 extern int strict_strtoul(const char *, unsigned int, unsigned long *);
+#define strict_strtol LINUX_BACKPORT(strict_strtol)
 extern int strict_strtol(const char *, unsigned int, long *);
 
 #else
@@ -263,12 +347,12 @@ extern int strict_strtol(const char *, unsigned int, long *);
  * Kernels >= 2.6.25 have pm-qos and its initialized as part of
  * the bootup process
  */
-static inline int compat_pm_qos_power_init(void)
+static inline int backport_pm_qos_power_init(void)
 {
 	return 0;
 }
 
-static inline int compat_pm_qos_power_deinit(void)
+static inline int backport_pm_qos_power_deinit(void)
 {
 	return 0;
 }

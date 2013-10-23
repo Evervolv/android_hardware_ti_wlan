@@ -728,8 +728,6 @@ struct wl1271_acx_ht_information {
 	u8 padding[2];
 } __packed;
 
-#define RX_BA_MAX_SESSIONS 3
-
 struct wl1271_acx_ba_initiator_policy {
 	struct acx_header header;
 
@@ -955,18 +953,17 @@ struct acx_rx_filter_cfg {
 	u8 fields[0];
 } __packed;
 
-enum wlcore_bandwidth {
-	WLCORE_BANDWIDTH_20MHZ,
-	WLCORE_BANDWIDTH_40MHZ,
-};
-
-struct wlcore_peer_ht_operation_mode {
+struct acx_roaming_stats {
 	struct acx_header header;
 
-	u8 hlid;
-	u8 bandwidth; /* enum wlcore_bandwidth */
-	u8 padding[2];
-};
+	u8	role_id;
+	u8	pad[3];
+	u32	missed_beacons;
+	u8	snr_data;
+	u8	snr_bacon;
+	s8	rssi_data;
+	s8	rssi_beacon;
+} __packed;
 
 enum {
 	ACX_WAKE_UP_CONDITIONS           = 0x0000,
@@ -1038,9 +1035,6 @@ enum {
 	ACX_CONFIG_HANGOVER              = 0x0042,
 	ACX_FEATURE_CFG                  = 0x0043,
 	ACX_PROTECTION_CFG               = 0x0044,
-	ACX_CHECKSUM_CONFIG              = 0x0045,
-
-	ACX_PEER_HT_OPERATION_MODE_CFG   = 0x0064,
 };
 
 
@@ -1117,7 +1111,8 @@ int wl1271_acx_set_ht_information(struct wl1271 *wl,
 int wl12xx_acx_set_ba_initiator_policy(struct wl1271 *wl,
 				       struct wl12xx_vif *wlvif);
 int wl12xx_acx_set_ba_receiver_session(struct wl1271 *wl, u8 tid_index,
-				       u16 ssn, bool enable, u8 peer_hlid);
+				       u16 ssn, bool enable, u8 peer_hlid,
+				       u8 win_size);
 int wl12xx_acx_tsf_info(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 			u64 *mactime);
 int wl1271_acx_ps_rx_streaming(struct wl1271 *wl, struct wl12xx_vif *wlvif,
@@ -1128,7 +1123,8 @@ int wl1271_acx_set_inconnection_sta(struct wl1271 *wl, u8 *addr);
 int wl1271_acx_fm_coex(struct wl1271 *wl);
 int wl12xx_acx_set_rate_mgmt_params(struct wl1271 *wl);
 int wl12xx_acx_config_hangover(struct wl1271 *wl);
-int wlcore_acx_peer_ht_operation_mode(struct wl1271 *wl, u8 hlid, bool wide);
+int wlcore_acx_average_rssi(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			    s8 *avg_rssi);
 
 #ifdef CONFIG_PM
 int wl1271_acx_default_rx_filter_enable(struct wl1271 *wl, bool enable,

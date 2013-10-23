@@ -124,9 +124,20 @@ typedef enum netdev_tx netdev_tx_t;
 /*
  * dev_pm_ops is only available on kernels >= 2.6.29, for
  * older kernels we rely on reverting the work to old
- * power management style stuff.
+ * power management style stuff. On 2.6.29 the pci calls
+ * weren't included yet though, so include them here.
  */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29))
+#if (LINUX_VERSION_CODE == KERNEL_VERSION(2,6,29))
+#define SIMPLE_DEV_PM_OPS(name, suspend_fn, resume_fn)		\
+struct dev_pm_ops name = {					\
+	.suspend = suspend_fn ## _compat,			\
+	.resume = resume_fn ## _compat,				\
+	.freeze = suspend_fn ## _compat,			\
+	.thaw = resume_fn ## _compat,				\
+	.poweroff = suspend_fn ## _compat,			\
+	.restore = resume_fn ## _compat,			\
+}
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,30))
 /*
  * Use this if you want to use the same suspend and resume callbacks for suspend
  * to RAM and hibernation.
@@ -179,6 +190,7 @@ struct tm {
 	int tm_yday;
 };
 
+#define time_to_tm LINUX_BACKPORT(time_to_tm)
 void time_to_tm(time_t totalsecs, int offset, struct tm *result);
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)) */

@@ -7,8 +7,31 @@
 
 #include <linux/skbuff.h>
 #include <linux/dma-mapping.h>
+#include <linux/printk.h>
+
+/* backports 07613b0b */
+#if defined(CONFIG_DYNAMIC_DEBUG)
+#define DEFINE_DYNAMIC_DEBUG_METADATA(name, fmt)               \
+	static struct _ddebug __used __aligned(8)               \
+	__attribute__((section("__verbose"))) name = {          \
+		.modname = KBUILD_MODNAME,                      \
+		.function = __func__,                           \
+		.filename = __FILE__,                           \
+		.format = (fmt),                                \
+		.lineno = __LINE__,                             \
+		.flags =  _DPRINTK_FLAGS_DEFAULT,               \
+		.enabled = false,                               \
+	}
+#endif /* defined(CONFIG_DYNAMIC_DEBUG) */
+
+/* backports b4625dab */
+#define  SDIO_CCCR_REV_3_00    3       /* CCCR/FBR Version 3.00 */
+#define  SDIO_SDIO_REV_3_00    4       /* SDIO Spec Version 3.00 */
 
 #define PMSG_IS_AUTO(msg)	(((msg).event & PM_EVENT_AUTO) != 0)
+
+/* mask skb_frag_page as RHEL6 backports this */
+#define skb_frag_page(a) compat_skb_frag_page(a)
 
 /**
  * skb_frag_page - retrieve the page refered to by a paged fragment
@@ -20,6 +43,9 @@ static inline struct page *skb_frag_page(const skb_frag_t *frag)
 {
 	return frag->page;
 }
+
+/* mask skb_frag_dma_map as RHEL6 backports this */
+#define skb_frag_dma_map(a,b,c,d,e) compat_skb_frag_dma_map(a,b,c,d,e)
 
 /**
  * skb_frag_dma_map - maps a paged fragment via the DMA API
@@ -42,6 +68,9 @@ static inline dma_addr_t skb_frag_dma_map(struct device *dev,
 }
 
 #define ETH_P_TDLS	0x890D          /* TDLS */
+
+/* mask skb_frag_size as RHEL6 backports this */
+#define skb_frag_size(a) compat_skb_frag_size(a)
 
 static inline unsigned int skb_frag_size(const skb_frag_t *frag)
 {
@@ -73,6 +102,7 @@ static inline void *dma_zalloc_coherent(struct device *dev, size_t size,
 	return ret;
 }
 
+#define __netdev_printk LINUX_BACKPORT(__netdev_printk)
 extern int __netdev_printk(const char *level, const struct net_device *dev,
 			   struct va_format *vaf);
 

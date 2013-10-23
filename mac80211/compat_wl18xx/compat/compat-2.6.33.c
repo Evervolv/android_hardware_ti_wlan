@@ -9,7 +9,58 @@
  */
 
 #include <linux/compat.h>
-#include <linux/autoconf.h>
+#include <linux/device.h>
+#include <linux/usb.h>
+#include <linux/pm_runtime.h>
+#include <linux/platform_device.h>
+
+#ifdef CONFIG_USB_SUSPEND
+/**
+ * usb_autopm_get_interface_no_resume - increment a USB interface's PM-usage counter
+ * @intf: the usb_interface whose counter should be incremented
+ *
+ * This routine increments @intf's usage counter but does not carry out an
+ * autoresume.
+ *
+ * This routine can run in atomic context.
+ */
+void usb_autopm_get_interface_no_resume(struct usb_interface *intf)
+{
+	struct usb_device       *udev = interface_to_usbdev(intf);
+
+	usb_mark_last_busy(udev);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
+	atomic_inc(&intf->pm_usage_cnt);
+#else
+	intf->pm_usage_cnt++;
+#endif
+	pm_runtime_get_noresume(&intf->dev);
+}
+EXPORT_SYMBOL_GPL(usb_autopm_get_interface_no_resume);
+
+/**
+ * usb_autopm_put_interface_no_suspend - decrement a USB interface's PM-usage counter
+ * @intf: the usb_interface whose counter should be decremented
+ *
+ * This routine decrements @intf's usage counter but does not carry out an
+ * autosuspend.
+ *
+ * This routine can run in atomic context.
+ */
+void usb_autopm_put_interface_no_suspend(struct usb_interface *intf)
+{
+	struct usb_device       *udev = interface_to_usbdev(intf);
+
+	usb_mark_last_busy(udev);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,32))
+	atomic_dec(&intf->pm_usage_cnt);
+#else
+	intf->pm_usage_cnt--;
+#endif
+	pm_runtime_put_noidle(&intf->dev);
+}
+EXPORT_SYMBOL_GPL(usb_autopm_put_interface_no_suspend);
+#endif /* CONFIG_USB_SUSPEND */
 
 #if defined(CONFIG_PCCARD) || defined(CONFIG_PCCARD_MODULE)
 
@@ -130,3 +181,50 @@ EXPORT_SYMBOL_GPL(pcmcia_loop_tuple);
 
 #endif /* CONFIG_PCCARD */
 
+/**
+ * platform_device_register_data
+ * @parent: parent device for the device we're adding
+ * @name: base name of the device we're adding
+ * @id: instance id
+ * @data: platform specific data for this platform device
+ * @size: size of platform specific data
+ *
+ * This function creates a simple platform device that requires minimal
+ * resource and memory management. Canned release function freeing memory
+ * allocated for the device allows drivers using such devices to be
+ * unloaded without waiting for the last reference to the device to be
+ * dropped.
+ */
+struct platform_device *platform_device_register_data(
+		struct device *parent,
+		const char *name, int id,
+		const void *data, size_t size)
+{
+	struct platform_device *pdev;
+	int retval;
+
+	pdev = platform_device_alloc(name, id);
+	if (!pdev) {
+		retval = -ENOMEM;
+		goto error;
+	}
+
+	pdev->dev.parent = parent;
+
+	if (size) {
+		retval = platform_device_add_data(pdev, data, size);
+		if (retval)
+			goto error;
+	}
+
+	retval = platform_device_add(pdev);
+	if (retval)
+		goto error;
+
+	return pdev;
+
+error:
+	platform_device_put(pdev);
+	return ERR_PTR(retval);
+}
+EXPORT_SYMBOL_GPL(platform_device_register_data);

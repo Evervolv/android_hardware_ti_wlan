@@ -87,6 +87,7 @@ static inline bool qdisc_all_tx_empty(const struct net_device *dev)
 	return skb_queue_empty(&dev->qdisc->q);
 }
 
+#define pci_pme_capable LINUX_BACKPORT(pci_pme_capable)
 bool pci_pme_capable(struct pci_dev *dev, pci_power_t state);
 
 /*
@@ -207,7 +208,9 @@ static inline void list_splice_tail_init(struct list_head *list,
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24))
+#define mmc_align_data_size LINUX_BACKPORT(mmc_align_data_size)
 extern unsigned int mmc_align_data_size(struct mmc_card *, unsigned int);
+#define sdio_align_size LINUX_BACKPORT(sdio_align_size)
 extern unsigned int sdio_align_size(struct sdio_func *func, unsigned int sz);
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24) */
 
@@ -251,6 +254,8 @@ static inline void dma_sync_single_range_for_device(struct device *dev,
 
 #endif /* arm */
 
+#define debugfs_remove_recursive LINUX_BACKPORT(debugfs_remove_recursive)
+
 #if defined(CONFIG_DEBUG_FS)
 void debugfs_remove_recursive(struct dentry *dentry);
 #else
@@ -286,6 +291,26 @@ static inline __u32 ethtool_cmd_speed(const struct ethtool_cmd *ep)
 #define lower_32_bits(n) ((u32)(n))
 
 #define netif_wake_subqueue netif_start_subqueue
+
+/* Backport of:
+ *
+ * commit 3295f0ef9ff048a4619ede597ad9ec9cab725654
+ * Author: Ingo Molnar <mingo@elte.hu>
+ * Date:   Mon Aug 11 10:30:30 2008 +0200
+ *
+ *     lockdep: rename map_[acquire|release]() => lock_map_[acquire|release]()
+ */
+#ifdef CONFIG_DEBUG_LOCK_ALLOC
+# ifdef CONFIG_PROVE_LOCKING
+#  define lock_map_acquire(l)		lock_acquire(l, 0, 0, 0, 2, NULL, _THIS_IP_)
+# else
+#  define lock_map_acquire(l)		lock_acquire(l, 0, 0, 0, 1, NULL, _THIS_IP_)
+# endif
+# define lock_map_release(l)			lock_release(l, 1, _THIS_IP_)
+#else
+# define lock_map_acquire(l)			do { } while (0)
+# define lock_map_release(l)			do { } while (0)
+#endif
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)) */
 

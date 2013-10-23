@@ -6,7 +6,7 @@
 # CONFIG_COMPAT_KERNEL_3_0 .. etc for each kernel release you need an object
 # for.
 #
-# Note: this is part of the compat.git project, not compat-wireless.git,
+# Note: this is part of the compat.git project, not compat-drivers,
 # send patches against compat.git.
 
 if [[ ! -f ${KLIB_BUILD}/Makefile ]]; then
@@ -17,7 +17,7 @@ fi
 KERNEL_VERSION=$(${MAKE} -C ${KLIB_BUILD} kernelversion | sed -n 's/^\([0-9]\)\..*/\1/p')
 
 # 3.0 kernel stuff
-COMPAT_LATEST_VERSION="5"
+COMPAT_LATEST_VERSION="9"
 KERNEL_SUBLEVEL="-1"
 
 # Note that this script will export all variables explicitly,
@@ -48,19 +48,23 @@ done
 # The RHEL checks seem to annotate the existance of RHEL minor versions.
 RHEL_MAJOR=$(grep ^RHEL_MAJOR ${KLIB_BUILD}/Makefile | sed -n 's/.*= *\(.*\)/\1/p')
 if [[ ! -z ${RHEL_MAJOR} ]]; then
-	RHEL_MINOR=$(grep ^RHEL_MINOR $(KLIB_BUILD)/Makefile | sed -n 's/.*= *\(.*\)/\1/p')
+	RHEL_MINOR=$(grep ^RHEL_MINOR ${KLIB_BUILD}/Makefile | sed -n 's/.*= *\(.*\)/\1/p')
 	for i in $(seq 0 ${RHEL_MINOR}); do
-		eval CONFIG_COMPAT_${RHEL_MAJOR}_${i}=y
-		echo "export CONFIG_COMPAT_${RHEL_MAJOR}_${i}=y"
+		eval CONFIG_COMPAT_RHEL_${RHEL_MAJOR}_${i}=y
+		echo "export CONFIG_COMPAT_RHEL_${RHEL_MAJOR}_${i}=y"
 	done
 fi
 
 if [[ ${CONFIG_COMPAT_KERNEL_2_6_33} = "y" ]]; then
-	echo "export CONFIG_COMPAT_FIRMWARE_CLASS=m"
+	if [[ ! ${CONFIG_COMPAT_RHEL_6_0} = "y" ]]; then
+		echo "export CONFIG_COMPAT_FIRMWARE_CLASS=m"
+	fi
 fi
 
 if [[ ${CONFIG_COMPAT_KERNEL_2_6_36} = "y" ]]; then
-	echo "export CONFIG_COMPAT_KFIFO=y"
+	if [[ ! ${CONFIG_COMPAT_RHEL_6_1} = "y" ]]; then
+		echo "export CONFIG_COMPAT_KFIFO=y"
+	fi
 fi
 
 if [[ ${CONFIG_COMPAT_KERNEL_3_5} = "y" ]]; then

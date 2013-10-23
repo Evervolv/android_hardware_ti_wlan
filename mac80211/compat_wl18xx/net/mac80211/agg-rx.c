@@ -83,8 +83,8 @@ void ___ieee80211_stop_rx_ba_session(struct sta_info *sta, u16 tid,
 	if (drv_ampdu_action(local, sta->sdata, IEEE80211_AMPDU_RX_STOP,
 			     &sta->sta, tid, NULL, 0))
 		sdata_info(sta->sdata,
-			   "HW problem - can not stop rx aggregation for tid %d\n",
-			   tid);
+			   "HW problem - can not stop rx aggregation for %pM tid %d\n",
+			   sta->sta.addr, tid);
 
 	/* check if this is a self generated aggregation halt */
 	if (initiator == WLAN_BACK_RECIPIENT && tx)
@@ -118,7 +118,7 @@ void ieee80211_stop_rx_ba_session(struct ieee80211_vif *vif, u16 ba_rx_bitmap,
 		return;
 	}
 
-	for (i = 0; i < STA_TID_NUM; i++)
+	for (i = 0; i < IEEE80211_NUM_TIDS; i++)
 		if (ba_rx_bitmap & BIT(i))
 			set_bit(i, sta->ampdu_mlme.tid_rx_stop_requested);
 
@@ -126,6 +126,28 @@ void ieee80211_stop_rx_ba_session(struct ieee80211_vif *vif, u16 ba_rx_bitmap,
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ieee80211_stop_rx_ba_session);
+
+void ieee80211_change_rx_ba_max_subframes(struct ieee80211_vif *vif,
+					  const u8 *addr,
+					  u8 max_subframes)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct sta_info *sta;
+
+	if (max_subframes == 0)
+		return;
+
+	rcu_read_lock();
+	sta = sta_info_get_bss(sdata, addr);
+	if (!sta) {
+		rcu_read_unlock();
+		return;
+	}
+	sta->sta.max_rx_aggregation_subframes = max_subframes;
+	ieee80211_queue_work(&sta->local->hw, &sta->ampdu_mlme.work);
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ieee80211_change_rx_ba_max_subframes);
 
 /*
  * After accepting the AddBA Request we activated a timer,
@@ -159,7 +181,8 @@ static void sta_rx_agg_session_timer_expired(unsigned long data)
 	}
 	rcu_read_unlock();
 
-	ht_dbg(sta->sdata, "rx session timer expired on tid %d\n", (u16)*ptid);
+	ht_dbg(sta->sdata, "RX session timer expired on %pM tid %d\n",
+	       sta->sta.addr, (u16)*ptid);
 
 	set_bit(*ptid, sta->ampdu_mlme.tid_rx_timer_expired);
 	ieee80211_queue_work(&sta->local->hw, &sta->ampdu_mlme.work);
@@ -247,7 +270,15 @@ void ieee80211_process_addba_request(struct ieee80211_local *local,
 	status = WLAN_STATUS_REQUEST_DECLINED;
 
 	if (test_sta_flag(sta, WLAN_STA_BLOCK_BA)) {
-		ht_dbg(sta->sdata, "Suspend in progress - Denying ADDBA request\n");
+		ht_dbg(sta->sdata,
+		       "Suspend in progress - Denying ADDBA request (%pM tid %d)\n",
+		       sta->sta.addr, tid);
+		goto end_no_lock;
+	}
+
+	if (tid == 6 || tid == 7) {
+		ht_dbg(sta->sdata, "ADDBA on VO AC TID %d - Deny request\n",
+		       tid);
 		goto end_no_lock;
 	}
 
@@ -268,12 +299,14 @@ void ieee80211_process_addba_request(struct ieee80211_local *local,
 	if (buf_size == 0)
 		buf_size = IEEE80211_MAX_AMPDU_BUF;
 
-	/* make sure the size doesn't exceed the maximum supported by the hw */
-	if (buf_size > local->hw.max_rx_aggregation_subframes)
-		buf_size = local->hw.max_rx_aggregation_subframes;
-
 	/* examine state machine */
 	mutex_lock(&sta->ampdu_mlme.mtx);
+
+	/* make sure the size doesn't exceed the maximum supported by link */
+	if (buf_size > sta->sta.max_rx_aggregation_subframes)
+		buf_size = sta->sta.max_rx_aggregation_subframes;
+
+	ht_dbg(sta->sdata, "AddBA Req buf_size=%d\n", buf_size);
 
 	if (sta->ampdu_mlme.tid_rx[tid]) {
 		ht_dbg_ratelimited(sta->sdata,
@@ -317,7 +350,8 @@ void ieee80211_process_addba_request(struct ieee80211_local *local,
 
 	ret = drv_ampdu_action(local, sta->sdata, IEEE80211_AMPDU_RX_START,
 			       &sta->sta, tid, &start_seq_num, 0);
-	ht_dbg(sta->sdata, "Rx A-MPDU request on tid %d result %d\n", tid, ret);
+	ht_dbg(sta->sdata, "Rx A-MPDU request on %pM tid %d result %d\n",
+	       sta->sta.addr, tid, ret);
 	if (ret) {
 		kfree(tid_agg_rx->reorder_buf);
 		kfree(tid_agg_rx->reorder_time);

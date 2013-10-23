@@ -31,21 +31,25 @@ ifneq ($(KERNELRELEASE),)
 -include $(COMPAT_CONFIG)
 include $(COMPAT_CONFIG_CW)
 
-NOSTDINC_FLAGS := -I$(M)/include/ \
+NOSTDINC_FLAGS := \
+	-I$(M)/include/ \
+	-I$(M)/include/uapi \
+	-I$(M)/include/drm \
 	-include $(M)/include/linux/compat-2.6.h \
 	$(CFLAGS)
 
 obj-y := compat/
 
-obj-$(CONFIG_COMPAT_RFKILL) += net/rfkill/
+#obj-$(CONFIG_COMPAT_RFKILL) += net/rfkill/
+
+#obj-$(CONFIG_COMPAT_MEDIA_MODULES) += drivers/media/v4l2-core/
+#obj-$(CONFIG_COMPAT_MEDIA_MODULES) += drivers/media/usb/uvc/
 
 ifeq ($(BT),)
 obj-$(CONFIG_COMPAT_WIRELESS) += net/wireless/ net/mac80211/
 obj-$(CONFIG_COMPAT_WIRELESS_MODULES) += drivers/net/wireless/
 
 
-obj-$(CONFIG_COMPAT_NETWORK_MODULES) += drivers/net/ethernet/atheros/
-obj-$(CONFIG_COMPAT_NETWORK_MODULES) += drivers/net/ethernet/broadcom/
 
 
 ifeq ($(CONFIG_STAGING_EXCLUDE_BUILD),)
@@ -53,8 +57,6 @@ endif
 
 endif
 
-obj-$(CONFIG_COMPAT_BLUETOOTH) += net/bluetooth/
-obj-$(CONFIG_COMPAT_BLUETOOTH_MODULES) += drivers/bluetooth/
 
 else
 
@@ -62,15 +64,16 @@ export PWD :=	$(shell pwd)
 
 # The build will fail if there is any space in PWD.
 ifneq (,$(findstring  $() ,$(PWD)))
-$(error "The path to this compat-wireless directory has spaces in it." \
+$(error "The path to this compat-drivers directory has spaces in it." \
 	"Please put it somewhere where there is no space")
 endif
 
+# For C code
 export CFLAGS += \
         -DCOMPAT_BASE="\"$(shell cat $(PWD)/.compat_base)\"" \
         -DCOMPAT_BASE_TREE="\"$(shell cat $(PWD)/.compat_base_tree)\"" \
         -DCOMPAT_BASE_TREE_VERSION="\"$(shell cat $(PWD)/.compat_base_tree_version)\"" \
-        -DCOMPAT_PROJECT="\"Compat-wireless\"" \
+        -DCOMPAT_PROJECT="\"compat-drivers\"" \
         -DCOMPAT_VERSION="\"$(shell cat $(PWD)/.compat_version)\""
 
 # These exported as they are used by the scripts
@@ -87,7 +90,15 @@ all: modules
 
 $(COMPAT_CONFIG): ;
 
+menuconfig:
+	@echo "Not yet supported, still under development"
+	@echo "If you want to hack on this start testing with:"
+	@echo "    make -f scripts/kconfig/Makefile menuconfig "
+	@exit 1
+	make -f scripts/kconfig/Makefile menuconfig
+
 modules: $(CREL_CHECK)
+	+@./scripts/check_config.sh
 	$(MAKE) -C $(KLIB_BUILD) M=$(PWD) modules
 	@touch $@
 
@@ -99,7 +110,7 @@ bt: $(CREL_CHECK)
 # We use a CREL_CHECK variable which will depend on the environment used to
 # build. If the environment requirements change it forces a reconfiguration
 # check.  This means we force a new reconfiguration check if a the user gets a
-# new updates of compat-wireless or when the user updates the $(COMPAT_CONFIG)
+# new updates of compat-drivers or when the user updates the $(COMPAT_CONFIG)
 # file.
 # XXX: add kernel target to the CREL_CHECK mix, this would ensure we also
 # reconfigure and build again fresh if we detect a new target kernel is
@@ -144,11 +155,14 @@ install: uninstall install-modules install-scripts
 install-modules: modules
 	$(MAKE) -C $(KLIB_BUILD) M=$(PWD) $(KMODDIR_ARG) $(KMODPATH_ARG) \
 		modules_install
+	@./scripts/blacklist.sh $(KLIB)/ $(KLIB)/$(KMODDIR)
+	@/sbin/depmod -a
 
 install-scripts:
 	@# All the scripts we can use
-	@mkdir -p $(DESTDIR)/usr/lib/compat-wireless/
-	@install scripts/modlib.sh	$(DESTDIR)/usr/lib/compat-wireless/
+	@mkdir -p $(DESTDIR)/usr/lib/compat-drivers/
+	@install scripts/modlib.sh	$(DESTDIR)/usr/lib/compat-drivers/
+	@install scripts/git-paranoia	$(DESTDIR)/usr/sbin/
 	@install scripts/madwifi-unload	$(DESTDIR)/usr/sbin/
 	@# This is to allow switching between drivers without blacklisting
 	@install scripts/athenable	$(DESTDIR)/usr/sbin/

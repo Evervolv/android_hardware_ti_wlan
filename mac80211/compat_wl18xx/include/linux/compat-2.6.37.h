@@ -9,6 +9,18 @@
 #include <linux/leds.h>
 #include <linux/in.h>
 #include <linux/errno.h>
+#include <linux/netdevice.h>
+
+#ifdef CONFIG_RPS
+extern int netif_set_real_num_rx_queues(struct net_device *dev,
+					unsigned int rxq);
+#else
+static inline int netif_set_real_num_rx_queues(struct net_device *dev,
+					       unsigned int rxq)
+{
+	return 0;
+}
+#endif
 
 static inline int proto_ports_offset(int proto)
 {
@@ -29,6 +41,7 @@ static inline int proto_ports_offset(int proto)
 
 #define SDIO_CLASS_BT_AMP	0x09	/* Type-A Bluetooth AMP interface */
 
+#define net_ns_type_operations LINUX_BACKPORT(net_ns_type_operations)
 extern struct kobj_ns_type_operations net_ns_type_operations;
 
 /* mask skb_checksum_none_assert as RHEL6 backports this */
@@ -132,9 +145,7 @@ extern void compat_led_brightness_set(struct led_classdev *led_cdev,
 
 #define netdev_refcnt_read(a) atomic_read(&a->refcnt)
 
-/* mask vzalloc as RHEL6 backports this */
-#define vzalloc(a) compat_vzalloc(a)
-
+#define vzalloc LINUX_BACKPORT(vzalloc)
 extern void *vzalloc(unsigned long size);
 
 #define rtnl_dereference(p)                                     \
@@ -153,6 +164,18 @@ static inline bool skb_has_frag_list(const struct sk_buff *skb)
 {
 	return skb_shinfo(skb)->frag_list != NULL;
 }
+
+/**
+ * backport:
+ *
+ * commit 67bdbffd696f29a0b68aa8daa285783a06651583
+ * Author: Arnd Bergmann <arnd@arndb.de>
+ * Date:   Thu Feb 25 16:55:13 2010 +0100
+ *
+ *     rculist: avoid __rcu annotations
+ */
+#define hlist_first_rcu(head)	(*((struct hlist_node __rcu **)(&(head)->first)))
+#define hlist_next_rcu(node)	(*((struct hlist_node __rcu **)(&(node)->next)))
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)) */
 

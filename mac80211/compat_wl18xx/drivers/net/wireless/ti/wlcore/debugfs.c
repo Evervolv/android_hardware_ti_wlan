@@ -108,6 +108,27 @@ static const struct file_operations tx_queue_len_ops = {
 	.llseek = default_llseek,
 };
 
+static ssize_t avg_irq_count_read(struct file *file, char __user *userbuf,
+				 size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	char buf[20];
+	int res;
+	u32 irq_avg;
+
+	mutex_lock(&wl->mutex);
+	irq_avg = wl->irq_loop_count / wl->irq_count;
+	mutex_unlock(&wl->mutex);
+
+	res = scnprintf(buf, sizeof(buf), "%u\n", irq_avg);
+	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
+}
+
+static const struct file_operations avg_irq_count_ops = {
+	.read = avg_irq_count_read,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
 static void chip_op_handler(struct wl1271 *wl, unsigned long value,
 			    void *arg)
 {
@@ -188,8 +209,14 @@ WL12XX_CONF_DEBUGFS(irq_pkt_threshold, rx, 0, 65535,
 		    chip_op_handler, wl1271_acx_init_rx_interrupt)
 WL12XX_CONF_DEBUGFS(irq_blk_threshold, rx, 0, 65535,
 		    chip_op_handler, wl1271_acx_init_rx_interrupt)
-WL12XX_CONF_DEBUGFS(irq_timeout, rx, 0, 100,
+WL12XX_CONF_DEBUGFS(irq_timeout, rx, 0, 65535,
 		    chip_op_handler, wl1271_acx_init_rx_interrupt)
+WL12XX_CONF_DEBUGFS(tx_compl_timeout, tx, 0, 65535,
+		    chip_op_handler, 0)
+WL12XX_CONF_DEBUGFS(tx_compl_threshold, tx, 0, 65535,
+		    chip_op_handler, 0)
+WL12XX_CONF_DEBUGFS(min_req_rx_blocks, mem, 0, 255,
+		    chip_op_handler, 0)
 
 static ssize_t gpio_power_read(struct file *file, char __user *user_buf,
 			  size_t count, loff_t *ppos)
@@ -398,6 +425,7 @@ static ssize_t stats_tx_aggr_read(struct file *file, char __user *user_buf,
 	size_t len = 32768, size = 0;
 	u32 total_buffer_full = 0, total_fw_buffer_full= 0;
 	u32 total_no_data = 0, total_other = 0;
+	u32 avg_aggr = 0, total_aggrs;
 
 	buf = kmalloc(len, GFP_KERNEL);
 	if (!buf)
@@ -417,6 +445,7 @@ static ssize_t stats_tx_aggr_read(struct file *file, char __user *user_buf,
 			wl->aggr_pkts_reason[i].fw_buffer_full +
 			wl->aggr_pkts_reason[i].other +
 			wl->aggr_pkts_reason[i].no_data;
+		avg_aggr += i * wl->aggr_pkts_reason[i].total;
 		if (wl->aggr_pkts_reason[i].total)
 			snprintf(buf, len, "%s[%d] total %d\n"
 				 "\tbuffer_full\t= %d\n"
@@ -430,18 +459,29 @@ static ssize_t stats_tx_aggr_read(struct file *file, char __user *user_buf,
 				 wl->aggr_pkts_reason[i].no_data);
 	}
 
+	/* don't count 0 sized aggregations */
+	total_aggrs = total_buffer_full + total_fw_buffer_full + total_other +
+		      total_no_data - wl->aggr_pkts_reason[0].total;
+	if (total_aggrs)
+		avg_aggr /= total_aggrs;
+	else
+		avg_aggr = 0;
+
+
 	mutex_unlock(&wl->mutex);
 
 	size =  snprintf(buf, len, "%sTotals:\n"
 			 "\tbuffer_full\t= %d\n"
 			 "\tfw_buffer_full\t= %d\n"
 			 "\tother\t\t= %d\n"
-			 "\tno_data\t\t= %d\n",
+			 "\tno_data\t\t= %d\n"
+			 "\tavg_aggr\t= %d\n",
 			 buf,
 			 total_buffer_full,
 			 total_fw_buffer_full,
 			 total_other,
-			 total_no_data);
+			 total_no_data,
+			 avg_aggr);
 
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, size);
 
@@ -460,7 +500,9 @@ static ssize_t stats_tx_aggr_write(struct file *file,
 	if (unlikely(wl->state != WLCORE_STATE_ON))
 		goto out;
 
-	memset(wl->aggr_pkts_reason, 0, sizeof(wl->aggr_pkts_reason));
+	wl1271_info("zeroing out aggr pkts reasons");
+	memset(wl->aggr_pkts_reason, 0,
+	       sizeof(struct wlcore_aggr_reason) * wl->aggr_pkts_reason_num);
 
 out:
 	mutex_unlock(&wl->mutex);
@@ -470,6 +512,120 @@ out:
 static const struct file_operations stats_tx_aggr_ops = {
 	.read = stats_tx_aggr_read,
 	.write = stats_tx_aggr_write,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+
+static ssize_t rx_num_comp_read(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	char *buf;
+	int ret, i;
+	size_t len = 32768, size = 0;
+
+	buf = kmalloc(len, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	buf[0] = '\0';
+
+	mutex_lock(&wl->mutex);
+
+	for (i = 0; i < 20; i++) {
+		if (wl->rx_completions[i])
+			snprintf(buf, len, "%s[%d] %d\n",
+				 buf, i+1, wl->rx_completions[i]);
+	}
+
+	mutex_unlock(&wl->mutex);
+
+	size =  snprintf(buf, len, "%s", buf);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, size);
+
+	kfree(buf);
+	return ret;
+}
+
+static ssize_t rx_num_comp_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+
+	mutex_lock(&wl->mutex);
+
+	if (unlikely(wl->state != WLCORE_STATE_ON))
+		goto out;
+
+	wl1271_info("zeroing out Rx num completion reasons");
+	memset(wl->rx_completions, 0, sizeof(wl->rx_completions));
+
+out:
+	mutex_unlock(&wl->mutex);
+	return count;
+}
+
+static const struct file_operations rx_num_comp_ops = {
+	.read = rx_num_comp_read,
+	.write = rx_num_comp_write,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+
+static ssize_t tx_num_comp_read(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	char *buf;
+	int ret, i;
+	size_t len = 32768, size = 0;
+
+	buf = kmalloc(len, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	buf[0] = '\0';
+
+	mutex_lock(&wl->mutex);
+
+	for (i = 0; i < 20; i++) {
+		if (wl->tx_completions[i])
+			snprintf(buf, len, "%s[%d] %d\n",
+				 buf, i+1, wl->tx_completions[i]);
+	}
+
+	mutex_unlock(&wl->mutex);
+
+	size =  snprintf(buf, len, "%s", buf);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, size);
+
+	kfree(buf);
+	return ret;
+}
+
+static ssize_t tx_num_comp_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+
+	mutex_lock(&wl->mutex);
+
+	if (unlikely(wl->state != WLCORE_STATE_ON))
+		goto out;
+
+	wl1271_info("zeroing out Tx num completion reasons");
+	memset(wl->tx_completions, 0, sizeof(wl->tx_completions));
+
+out:
+	mutex_unlock(&wl->mutex);
+	return count;
+}
+
+static const struct file_operations tx_num_comp_ops = {
+	.read = tx_num_comp_read,
+	.write = tx_num_comp_write,
 	.open = simple_open,
 	.llseek = default_llseek,
 };
@@ -523,6 +679,7 @@ static ssize_t driver_state_read(struct file *file, char __user *user_buf,
 	int res = 0;
 	ssize_t ret;
 	char *buf;
+	struct wl12xx_vif *wlvif;
 
 #define DRIVER_STATE_BUF_LEN 1024
 
@@ -549,6 +706,18 @@ static ssize_t driver_state_read(struct file *file, char __user *user_buf,
 	DRIVER_STATE_PRINT_GENERIC(version, "%s", wlcore_git_head);
 	DRIVER_STATE_PRINT_GENERIC(timestamp, "%s", wlcore_timestamp);
 
+	wl12xx_for_each_wlvif_sta(wl, wlvif) {
+		if (!test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
+			continue;
+
+		DRIVER_STATE_PRINT_GENERIC(channel, "%d (%s)", wlvif->channel,
+					   wlvif->p2p ? "P2P-CL" : "STA");
+	}
+
+	wl12xx_for_each_wlvif_ap(wl, wlvif)
+		DRIVER_STATE_PRINT_GENERIC(channel, "%d (%s)", wlvif->channel,
+					   wlvif->p2p ? "P2P-GO" : "AP");
+
 	DRIVER_STATE_PRINT_INT(tx_blocks_available);
 	DRIVER_STATE_PRINT_INT(tx_allocated_blocks);
 	DRIVER_STATE_PRINT_INT(tx_allocated_pkts[0]);
@@ -567,7 +736,6 @@ static ssize_t driver_state_read(struct file *file, char __user *user_buf,
 	DRIVER_STATE_PRINT_INT(tx_blocks_freed);
 	DRIVER_STATE_PRINT_INT(rx_counter);
 	DRIVER_STATE_PRINT_INT(state);
-	DRIVER_STATE_PRINT_INT(channel);
 	DRIVER_STATE_PRINT_INT(band);
 	DRIVER_STATE_PRINT_INT(power_level);
 	DRIVER_STATE_PRINT_INT(sg_enabled);
@@ -653,7 +821,6 @@ static ssize_t vifs_state_read(struct file *file, char __user *user_buf,
 		if (wlvif->bss_type == BSS_TYPE_STA_BSS ||
 		    wlvif->bss_type == BSS_TYPE_IBSS) {
 			VIF_STATE_PRINT_INT(sta.hlid);
-			VIF_STATE_PRINT_INT(sta.ba_rx_bitmap);
 			VIF_STATE_PRINT_INT(sta.basic_rate_idx);
 			VIF_STATE_PRINT_INT(sta.ap_rate_idx);
 			VIF_STATE_PRINT_INT(sta.p2p_rate_idx);
@@ -670,6 +837,10 @@ static ssize_t vifs_state_read(struct file *file, char __user *user_buf,
 			VIF_STATE_PRINT_INT(ap.ucast_rate_idx[3]);
 		}
 		VIF_STATE_PRINT_INT(last_tx_hlid);
+		VIF_STATE_PRINT_INT(tx_queue_count[0]);
+		VIF_STATE_PRINT_INT(tx_queue_count[1]);
+		VIF_STATE_PRINT_INT(tx_queue_count[2]);
+		VIF_STATE_PRINT_INT(tx_queue_count[3]);
 		VIF_STATE_PRINT_LHEX(links_map[0]);
 		VIF_STATE_PRINT_NSTR(ssid, wlvif->ssid_len);
 		VIF_STATE_PRINT_INT(band);
@@ -682,15 +853,13 @@ static ssize_t vifs_state_read(struct file *file, char __user *user_buf,
 		VIF_STATE_PRINT_INT(beacon_int);
 		VIF_STATE_PRINT_INT(default_key);
 		VIF_STATE_PRINT_INT(aid);
-		VIF_STATE_PRINT_INT(session_counter);
 		VIF_STATE_PRINT_INT(psm_entry_retry);
 		VIF_STATE_PRINT_INT(power_level);
 		VIF_STATE_PRINT_INT(rssi_thold);
 		VIF_STATE_PRINT_INT(last_rssi_event);
 		VIF_STATE_PRINT_INT(ba_support);
 		VIF_STATE_PRINT_INT(ba_allowed);
-		VIF_STATE_PRINT_LLHEX(tx_security_seq);
-		VIF_STATE_PRINT_INT(tx_security_last_seq_lsb);
+		VIF_STATE_PRINT_LLHEX(total_freed_pkts);
 	}
 
 #undef VIF_STATE_PRINT_INT
@@ -1086,7 +1255,7 @@ static ssize_t sleep_auth_write(struct file *file,
 		return -EINVAL;
 	}
 
-	if (value < 0 || value > WL1271_PSM_MAX) {
+	if (value > WL1271_PSM_MAX) {
 		wl1271_warning("sleep_auth must be between 0 and %d",
 			       WL1271_PSM_MAX);
 		return -ERANGE;
@@ -1323,6 +1492,7 @@ static int wl1271_debugfs_add_files(struct wl1271 *wl,
 	int ret = 0;
 	struct dentry *entry, *streaming;
 
+	DEBUGFS_ADD(avg_irq_count, rootdir);
 	DEBUGFS_ADD(tx_queue_len, rootdir);
 	DEBUGFS_ADD(retry_count, rootdir);
 	DEBUGFS_ADD(excessive_retries, rootdir);
@@ -1344,6 +1514,11 @@ static int wl1271_debugfs_add_files(struct wl1271 *wl,
 	DEBUGFS_ADD(irq_timeout, rootdir);
 	DEBUGFS_ADD(fw_stats_raw, rootdir);
 	DEBUGFS_ADD(sleep_auth, rootdir);
+	DEBUGFS_ADD(tx_num_comp, rootdir);
+	DEBUGFS_ADD(rx_num_comp, rootdir);
+	DEBUGFS_ADD(tx_compl_timeout, rootdir);
+	DEBUGFS_ADD(tx_compl_threshold, rootdir);
+	DEBUGFS_ADD(min_req_rx_blocks, rootdir);
 
 	streaming = debugfs_create_dir("rx_streaming", rootdir);
 	if (!streaming || IS_ERR(streaming))

@@ -25,13 +25,13 @@ struct va_format {
 #define device_rename(dev, new_name) device_rename(dev, (char *)new_name)
 
 #ifdef CONFIG_COMPAT_USB_URB_THREAD_FIX
-#define usb_scuttle_anchored_urbs(anchor)	compat_usb_scuttle_anchored_urbs(anchor)
-#define usb_get_from_anchor(anchor)	compat_usb_get_from_anchor(anchor)
-#define usb_unlink_anchored_urbs(anchor)	compat_usb_unlink_anchored_urbs(anchor)
+#define usb_scuttle_anchored_urbs LINUX_BACKPORT(usb_scuttle_anchored_urbs)
+#define usb_get_from_anchor LINUX_BACKPORT(usb_get_from_anchor)
+#define usb_unlink_anchored_urbs LINUX_BACKPORT(usb_unlink_anchored_urbs)
 
-extern void compat_usb_unlink_anchored_urbs(struct usb_anchor *anchor);
-extern struct urb *compat_usb_get_from_anchor(struct usb_anchor *anchor);
-extern void compat_usb_scuttle_anchored_urbs(struct usb_anchor *anchor);
+extern void usb_unlink_anchored_urbs(struct usb_anchor *anchor);
+extern struct urb *usb_get_from_anchor(struct usb_anchor *anchor);
+extern void usb_scuttle_anchored_urbs(struct usb_anchor *anchor);
 #endif
 
 /**
@@ -98,6 +98,8 @@ struct pm_qos_request_list {
  * Dummy printk for disabled debugging statements to use whilst maintaining
  * gcc's format and side-effect checking.
  */
+/* mask no_printk as RHEL6 backports this */
+#define no_printk(a, ...) compat_no_printk(a, ##__VA_ARGS__)
 static inline __attribute__ ((format (printf, 1, 2)))
 int no_printk(const char *s, ...) { return 0; }
 
@@ -152,21 +154,29 @@ static inline void skb_tx_timestamp(struct sk_buff *skb)
  * item is never executed in parallel by multiple CPUs.  Queue
  * flushing might take relatively long.
  */
+#define system_wq LINUX_BACKPORT(system_wq)
 extern struct workqueue_struct *system_wq;
+#define system_long_wq LINUX_BACKPORT(system_long_wq)
 extern struct workqueue_struct *system_long_wq;
+#define system_nrt_wq LINUX_BACKPORT(system_nrt_wq)
 extern struct workqueue_struct *system_nrt_wq;
 
-void compat_system_workqueue_create(void);
-void compat_system_workqueue_destroy(void);
+void backport_system_workqueue_create(void);
+void backport_system_workqueue_destroy(void);
 
-int compat_schedule_work(struct work_struct *work);
-int compat_schedule_work_on(int cpu, struct work_struct *work);
-int compat_schedule_delayed_work(struct delayed_work *dwork,
-				 unsigned long delay);
-int compat_schedule_delayed_work_on(int cpu,
-				    struct delayed_work *dwork,
-				    unsigned long delay);
-void compat_flush_scheduled_work(void);
+#define schedule_work LINUX_BACKPORT(schedule_work)
+int schedule_work(struct work_struct *work);
+#define schedule_work_on LINUX_BACKPORT(schedule_work_on)
+int schedule_work_on(int cpu, struct work_struct *work);
+#define compat_schedule_delayed_work LINUX_BACKPORT(compat_schedule_delayed_work)
+int schedule_delayed_work(struct delayed_work *dwork,
+			  unsigned long delay);
+#define compat_schedule_delayed_work_on LINUX_BACKPORT(compat_schedule_delayed_work_on)
+int schedule_delayed_work_on(int cpu,
+			     struct delayed_work *dwork,
+			     unsigned long delay);
+#define flush_scheduled_work LINUX_BACKPORT(flush_scheduled_work)
+void flush_scheduled_work(void);
 
 enum {
 	/* bit mask for work_busy() return values */
@@ -174,23 +184,18 @@ enum {
 	WORK_BUSY_RUNNING       = 1 << 1,
 };
 
+#define work_busy LINUX_BACKPORT(work_busy)
 extern unsigned int work_busy(struct work_struct *work);
-
-#define schedule_work(work) compat_schedule_work(work)
-#define schedule_work_on(cpu, work) compat_schedule_work_on(cpu, work)
-#define schedule_delayed_work(dwork, delay) compat_schedule_delayed_work(dwork, delay)
-#define schedule_delayed_work_on(cpu, dwork, delay) compat_schedule_delayed_work_on(cpu, dwork, delay)
-#define flush_scheduled_work(a) compat_flush_scheduled_work(a)
 
 #define br_port_exists(dev)	(dev->br_port)
 
 #else
 
-static inline void compat_system_workqueue_create(void)
+static inline void backport_system_workqueue_create(void)
 {
 }
 
-static inline void compat_system_workqueue_destroy(void)
+static inline void backport_system_workqueue_destroy(void)
 {
 }
 

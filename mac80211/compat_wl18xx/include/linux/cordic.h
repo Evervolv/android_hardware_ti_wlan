@@ -1,3 +1,12 @@
+#ifndef _BACKPORT_LINUX_CORDIC_H
+#define _BACKPORT_LINUX_CORDIC_H 1
+
+#include <linux/version.h>
+
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0))
+#include_next <linux/cordic.h>
+#else
+
 /*
  * Copyright (c) 2011 Broadcom Corporation
  *
@@ -43,6 +52,9 @@ struct cordic_iq {
  * for -180 degrees to +180 degrees. Passed values outside this range are
  * converted before doing the actual calculation.
  */
+#define cordic_calc_iq LINUX_BACKPORT(cordic_calc_iq)
 struct cordic_iq cordic_calc_iq(s32 theta);
 
 #endif /* __CORDIC_H_ */
+#endif /* LINUX_VERSION_CODE > KERNEL_VERSION(3,1,0)) */
+#endif /* _BACKPORT_LINUX_CORDIC_H */

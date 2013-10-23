@@ -6,6 +6,9 @@
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30))
 
 #include <linux/device.h>
+#include <linux/pci_regs.h>
+
+#define HID_QUIRK_IGNORE                       0x00000004
 
 #ifndef TP_PROTO
 #define TP_PROTO(args...)	TPPROTO(args)
@@ -41,6 +44,9 @@ static inline void dev_set_uevent_suppress(struct device *dev, int val)
 		printk(x);			\
 	}					\
 })
+
+#define PCI_EXP_LNKCTL2			48      /* Link Control 2 */
+#define PCI_EXP_SLTCTL2			56      /* Slot Control 2 */
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)) */
 

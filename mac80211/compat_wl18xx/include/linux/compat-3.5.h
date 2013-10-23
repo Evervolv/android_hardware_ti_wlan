@@ -8,6 +8,160 @@
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0))
 
+#include <net/netlink.h>
+
+/*
+ * This backports:
+ * commit 569a8fc38367dfafd87454f27ac646c8e6b54bca
+ * Author: David S. Miller <davem@davemloft.net>
+ * Date:   Thu Mar 29 23:18:53 2012 -0400
+ *
+ *     netlink: Add nla_put_be{16,32,64}() helpers.
+ */
+
+static inline int nla_put_be16(struct sk_buff *skb, int attrtype, __be16 value)
+{
+	return nla_put(skb, attrtype, sizeof(__be16), &value);
+}
+
+static inline int nla_put_be32(struct sk_buff *skb, int attrtype, __be32 value)
+{
+	return nla_put(skb, attrtype, sizeof(__be32), &value);
+}
+
+static inline int nla_put_be64(struct sk_buff *skb, int attrtype, __be64 value)
+{
+	return nla_put(skb, attrtype, sizeof(__be64), &value);
+}
+
+/*
+ * This backports:
+ *
+ * commit f56f821feb7b36223f309e0ec05986bb137ce418
+ * Author: Daniel Vetter <daniel.vetter@ffwll.ch>
+ * Date:   Sun Mar 25 19:47:41 2012 +0200
+ *
+ *     mm: extend prefault helpers to fault in more than PAGE_SIZE
+ *
+ * The new functions are used by drm/i915 driver.
+ *
+ */
+
+static inline int fault_in_multipages_writeable(char __user *uaddr, int size)
+{
+        int ret = 0;
+        char __user *end = uaddr + size - 1;
+
+        if (unlikely(size == 0))
+                return ret;
+
+        /*
+         * Writing zeroes into userspace here is OK, because we know that if
+         * the zero gets there, we'll be overwriting it.
+         */
+        while (uaddr <= end) {
+                ret = __put_user(0, uaddr);
+                if (ret != 0)
+                        return ret;
+                uaddr += PAGE_SIZE;
+        }
+
+        /* Check whether the range spilled into the next page. */
+        if (((unsigned long)uaddr & PAGE_MASK) ==
+                        ((unsigned long)end & PAGE_MASK))
+                ret = __put_user(0, end);
+
+        return ret;
+}
+
+static inline int fault_in_multipages_readable(const char __user *uaddr,
+                                               int size)
+{
+        volatile char c;
+        int ret = 0;
+        const char __user *end = uaddr + size - 1;
+
+        if (unlikely(size == 0))
+                return ret;
+
+        while (uaddr <= end) {
+                ret = __get_user(c, uaddr);
+                if (ret != 0)
+                        return ret;
+                uaddr += PAGE_SIZE;
+        }
+
+        /* Check whether the range spilled into the next page. */
+        if (((unsigned long)uaddr & PAGE_MASK) ==
+                        ((unsigned long)end & PAGE_MASK)) {
+                ret = __get_user(c, end);
+                (void)c;
+        }
+
+        return ret;
+}
+
+/* switcheroo is available on >= 2.6.34 */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
+#include <linux/vga_switcheroo.h>
+/*
+ * This backports:
+ *
+ *   From 26ec685ff9d9c16525d8ec4c97e52fcdb187b302 Mon Sep 17 00:00:00 2001
+ *   From: Takashi Iwai <tiwai@suse.de>
+ *   Date: Fri, 11 May 2012 07:51:17 +0200
+ *   Subject: [PATCH] vga_switcheroo: Introduce struct vga_switcheroo_client_ops
+ *
+ */
+
+struct vga_switcheroo_client_ops {
+    void (*set_gpu_state)(struct pci_dev *dev, enum vga_switcheroo_state);
+    void (*reprobe)(struct pci_dev *dev);
+    bool (*can_switch)(struct pci_dev *dev);
+};
+
+/* Wrap around the old code and redefine vga_switcheroo_register_client()
+ * for older kernels < 3.5.0.
+ */
+static inline int compat_vga_switcheroo_register_client(struct pci_dev *dev,
+		const struct vga_switcheroo_client_ops *ops) {
+
+	return vga_switcheroo_register_client(dev,
+					      ops->set_gpu_state,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38))
+					      ops->reprobe,
+#endif
+					      ops->can_switch);
+}
+
+#define vga_switcheroo_register_client(_dev, _ops) \
+	compat_vga_switcheroo_register_client(_dev, _ops)
+
+#endif
+
+/* This backports
+ *
+ * commit 14674e70119ea01549ce593d8901a797f8a90f74
+ * Author: Mark Brown <broonie@opensource.wolfsonmicro.com>
+ * Date:   Wed May 30 10:55:34 2012 +0200
+ *
+ *     i2c: Split I2C_M_NOSTART support out of I2C_FUNC_PROTOCOL_MANGLING
+ */
+
+#define I2C_FUNC_NOSTART 0x00000010 /* I2C_M_NOSTART */
+
+/*
+ * This backports:
+ *
+ *   From a3860c1c5dd1137db23d7786d284939c5761d517 Mon Sep 17 00:00:00 2001
+ *   From: Xi Wang <xi.wang@gmail.com>
+ *   Date: Thu, 31 May 2012 16:26:04 -0700
+ *   Subject: [PATCH] introduce SIZE_MAX
+ */
+
+#define SIZE_MAX    (~(size_t)0)
+
+
 #include <linux/pkt_sched.h>
 
 /*
@@ -19,7 +173,10 @@
  *   Subject: [PATCH] codel: Controlled Delay AQM
  */
 
+#ifndef TCA_CODEL_MAX
 /* CODEL */
+
+#define COMPAT_CODEL_BACKPORT
 
 enum {
 	TCA_CODEL_UNSPEC,
@@ -106,11 +263,7 @@ struct tc_fq_codel_xstats {
 		struct tc_fq_codel_cl_stats class_stats;
 	};
 };
-
-
-/* Backports tty_lock: Localise the lock */
-#define tty_lock(__tty) tty_lock()
-#define tty_unlock(__tty) tty_unlock()
+#endif /* TCA_CODEL_MAX */
 
 /* Backport ether_addr_equal */
 static inline bool ether_addr_equal(const u8 *addr1, const u8 *addr2)
@@ -140,6 +293,9 @@ do {								\
 	net_ratelimited_function(pr_info, fmt, ##__VA_ARGS__)
 #define net_dbg_ratelimited(fmt, ...)				\
 	net_ratelimited_function(pr_debug, fmt, ##__VA_ARGS__)
+
+#define ktime_get_monotonic_offset LINUX_BACKPORT(ktime_get_monotonic_offset)
+extern ktime_t ktime_get_monotonic_offset(void);
 
 #endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)) */
 
