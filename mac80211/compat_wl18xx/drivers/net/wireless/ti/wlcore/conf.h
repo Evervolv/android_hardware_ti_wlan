@@ -1274,7 +1274,7 @@ struct conf_rx_streaming_settings {
 	u8 always;
 } __packed;
 
-#define CONF_FWLOG_MIN_MEM_BLOCKS 	2
+#define CONF_FWLOG_MIN_MEM_BLOCKS	2
 #define CONF_FWLOG_MAX_MEM_BLOCKS	16
 
 struct conf_fwlog {

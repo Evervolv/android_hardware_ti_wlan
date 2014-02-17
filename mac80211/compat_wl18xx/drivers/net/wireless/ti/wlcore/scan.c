@@ -236,9 +236,7 @@ wlcore_scan_get_channels(struct wl1271 *wl,
 					     *n_pactive_ch);
 			}
 
-			wl1271_debug(DEBUG_SCAN, "freq %04d, ch. %03d, "
-				     "flags 0x%02X, power %02d, "
-				     "min/max_dwell %02d/%02d%s%s",
+			wl1271_debug(DEBUG_SCAN, "freq %d, ch. %d, flags 0x%x, power %d, min/max_dwell %d/%d%s%s",
 				     req_channels[i]->center_freq,
 				     req_channels[i]->hw_value,
 				     req_channels[i]->flags,
@@ -249,7 +247,6 @@ wlcore_scan_get_channels(struct wl1271 *wl,
 					", DFS" : "",
 				     flags & IEEE80211_CHAN_PASSIVE_SCAN ?
 					", PASSIVE" : "");
-
 			j++;
 		}
 	}

@@ -155,7 +155,7 @@ static int wl1271_tm_cmd_interrogate(struct wl1271 *wl, struct nlattr *tb[])
 	}
 
 	ret = wl1271_cmd_interrogate(wl, ie_id, cmd,
-				sizeof(struct acx_header), sizeof(*cmd));
+				     sizeof(struct acx_header), sizeof(*cmd));
 	if (ret < 0) {
 		wl1271_warning("testmode cmd interrogate failed: %d", ret);
 		goto out_free;
@@ -425,7 +425,8 @@ out:
 	return ret;
 }
 
-int wl1271_tm_cmd(struct ieee80211_hw *hw, void *data, int len)
+int wl1271_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		  void *data, int len)
 {
 	struct wl1271 *wl = hw->priv;
 	struct nlattr *tb[WL1271_TM_ATTR_MAX + 1];

@@ -347,24 +347,24 @@ static void wl12xx_irq_ps_regulate_link(struct wl1271 *wl,
 	 * Start high-level PS if the STA is asleep with enough blocks in FW.
 	 * Make an exception if this is the only connected link. In this
 	 * case FW-memory congestion is less of a problem.
-	 * Note that a single connected STA means 3 active links, since we must
-	 * account for the global and broadcast AP links. The "fw_ps" check
-	 * assures us the third link is a STA connected to the AP. Otherwise
-	 * the FW would not set the PSM bit.
+	 * Note that a single connected STA means 2*ap_count + 1 active links,
+	 * since we must account for the global and broadcast AP links
+	 * for each AP. The "fw_ps" check assures us the other link is a STA
+	 * connected to the AP. Otherwise the FW would not set the PSM bit.
 	 */
-	else if (wl->active_link_count > 3 && fw_ps &&
+	else if (wl->active_link_count > (wl->ap_count*2 + 1) && fw_ps &&
 		 tx_pkts >= WL1271_PS_STA_MAX_PACKETS)
 		wl12xx_ps_link_start(wl, wlvif, hlid, true);
 }
 
 static void wl12xx_irq_update_links_status(struct wl1271 *wl,
 					   struct wl12xx_vif *wlvif,
-					   struct wl_fw_status_2 *status)
+					   struct wl_fw_status *status)
 {
 	u32 cur_fw_ps_map;
 	u8 hlid;
 
-	cur_fw_ps_map = le32_to_cpu(status->link_ps_bitmap);
+	cur_fw_ps_map = status->link_ps_bitmap;
 	if (wl->ap_fw_ps_map != cur_fw_ps_map) {
 		wl1271_debug(DEBUG_PSM,
 			     "link ps prev 0x%x cur 0x%x changed 0x%x",
@@ -374,77 +374,73 @@ static void wl12xx_irq_update_links_status(struct wl1271 *wl,
 		wl->ap_fw_ps_map = cur_fw_ps_map;
 	}
 
-	for_each_set_bit(hlid, wlvif->ap.sta_hlid_map, WL12XX_MAX_LINKS)
+	for_each_set_bit(hlid, wlvif->ap.sta_hlid_map, wl->num_links)
 		wl12xx_irq_ps_regulate_link(wl, wlvif, hlid,
 					    wl->links[hlid].allocated_pkts);
 }
 
-static int wlcore_fw_status(struct wl1271 *wl,
-			    struct wl_fw_status_1 *status_1,
-			    struct wl_fw_status_2 *status_2)
+static int wlcore_fw_status(struct wl1271 *wl, struct wl_fw_status *status)
 {
 	struct wl12xx_vif *wlvif;
 	struct timespec ts;
 	u32 old_tx_blk_count = wl->tx_blocks_available;
 	int avail, freed_blocks;
 	int i;
-	size_t status_len;
 	int ret;
 	struct wl1271_link *lnk;
 
-	status_len = WLCORE_FW_STATUS_1_LEN(wl->num_rx_desc) +
-		sizeof(*status_2) + wl->fw_status_priv_len;
-
-	ret = wlcore_raw_read_data(wl, REG_RAW_FW_STATUS_ADDR, status_1,
-				   status_len, false);
+	ret = wlcore_raw_read_data(wl, REG_RAW_FW_STATUS_ADDR,
+				   wl->raw_fw_status,
+				   wl->fw_status_len, false);
 	if (ret < 0)
 		return ret;
 
+	wlcore_hw_convert_fw_status(wl, wl->raw_fw_status, wl->fw_status);
+
 	wl1271_debug(DEBUG_IRQ, "intr: 0x%x (fw_rx_counter = %d, "
 		     "drv_rx_counter = %d, tx_results_counter = %d)",
-		     status_1->intr,
-		     status_1->fw_rx_counter,
-		     status_1->drv_rx_counter,
-		     status_1->tx_results_counter);
+		     status->intr,
+		     status->fw_rx_counter,
+		     status->drv_rx_counter,
+		     status->tx_results_counter);
 
 	for (i = 0; i < NUM_TX_QUEUES; i++) {
 		/* prevent wrap-around in freed-packets counter */
 		wl->tx_allocated_pkts[i] -=
-				(status_2->counters.tx_released_pkts[i] -
+				(status->counters.tx_released_pkts[i] -
 				wl->tx_pkts_freed[i]) & 0xff;
 
-		wl->tx_pkts_freed[i] = status_2->counters.tx_released_pkts[i];
+		wl->tx_pkts_freed[i] = status->counters.tx_released_pkts[i];
 	}
 
 
-	for_each_set_bit(i, wl->links_map, WL12XX_MAX_LINKS) {
+	for_each_set_bit(i, wl->links_map, wl->num_links) {
 		u8 diff;
 		lnk = &wl->links[i];
 
 		/* prevent wrap-around in freed-packets counter */
-		diff = (status_2->counters.tx_lnk_free_pkts[i] -
+		diff = (status->counters.tx_lnk_free_pkts[i] -
 		       lnk->prev_freed_pkts) & 0xff;
 
 		if (diff == 0)
 			continue;
 
 		lnk->allocated_pkts -= diff;
-		lnk->prev_freed_pkts = status_2->counters.tx_lnk_free_pkts[i];
+		lnk->prev_freed_pkts = status->counters.tx_lnk_free_pkts[i];
 
 		/* accumulate the prev_freed_pkts counter */
 		lnk->total_freed_pkts += diff;
 	}
 
 	/* prevent wrap-around in total blocks counter */
-	if (likely(wl->tx_blocks_freed <=
-		   le32_to_cpu(status_2->total_released_blks)))
-		freed_blocks = le32_to_cpu(status_2->total_released_blks) -
+	if (likely(wl->tx_blocks_freed <= status->total_released_blks))
+		freed_blocks = status->total_released_blks -
 			       wl->tx_blocks_freed;
 	else
 		freed_blocks = 0x100000000LL - wl->tx_blocks_freed +
-			       le32_to_cpu(status_2->total_released_blks);
+			       status->total_released_blks;
 
-	wl->tx_blocks_freed = le32_to_cpu(status_2->total_released_blks);
+	wl->tx_blocks_freed = status->total_released_blks;
 
 	wl->tx_allocated_blocks -= freed_blocks;
 
@@ -460,7 +456,7 @@ static int wlcore_fw_status(struct wl1271 *wl,
 			cancel_delayed_work(&wl->tx_watchdog_work);
 	}
 
-	avail = le32_to_cpu(status_2->tx_total) - wl->tx_allocated_blocks;
+	avail = status->tx_total - wl->tx_allocated_blocks;
 
 	/*
 	 * The FW might change the total number of TX memblocks before
@@ -479,15 +475,15 @@ static int wlcore_fw_status(struct wl1271 *wl,
 
 	/* for AP update num of allocated TX blocks per link and ps status */
 	wl12xx_for_each_wlvif_ap(wl, wlvif) {
-		wl12xx_irq_update_links_status(wl, wlvif, status_2);
+		wl12xx_irq_update_links_status(wl, wlvif, status);
 	}
 
 	/* update the host-chipset time offset */
 	getnstimeofday(&ts);
 	wl->time_offset = (timespec_to_ns(&ts) >> 10) -
-		(s64)le32_to_cpu(status_2->fw_localtime);
+		(s64)(status->fw_localtime);
 
-	wl->fw_fast_lnk_map = le32_to_cpu(status_2->link_fast_bitmap);
+	wl->fw_fast_lnk_map = status->link_fast_bitmap;
 
 	return 0;
 }
@@ -551,13 +547,13 @@ static int wlcore_irq_locked(struct wl1271 *wl)
 		clear_bit(WL1271_FLAG_IRQ_RUNNING, &wl->flags);
 		smp_mb__after_clear_bit();
 
-		ret = wlcore_fw_status(wl, wl->fw_status_1, wl->fw_status_2);
+		ret = wlcore_fw_status(wl, wl->fw_status);
 		if (ret < 0)
 			goto out;
 
 		wlcore_hw_tx_immediate_compl(wl);
 
-		intr = le32_to_cpu(wl->fw_status_1->intr);
+		intr = wl->fw_status->intr;
 		intr &= WLCORE_ALL_INTR_MASK;
 		if (!intr) {
 			done = true;
@@ -586,7 +582,7 @@ static int wlcore_irq_locked(struct wl1271 *wl)
 		if (likely(intr & WL1271_ACX_INTR_DATA)) {
 			wl1271_debug(DEBUG_IRQ, "WL1271_ACX_INTR_DATA");
 
-			ret = wlcore_rx(wl, wl->fw_status_1);
+			ret = wlcore_rx(wl, wl->fw_status);
 			if (ret < 0)
 				goto out;
 
@@ -800,10 +796,11 @@ out:
 
 void wl12xx_queue_recovery_work(struct wl1271 *wl)
 {
-	WARN_ON(!test_bit(WL1271_FLAG_INTENDED_FW_RECOVERY, &wl->flags));
-
 	/* Avoid a recursive recovery */
 	if (wl->state == WLCORE_STATE_ON) {
+		WARN_ON(!test_bit(WL1271_FLAG_INTENDED_FW_RECOVERY,
+				  &wl->flags));
+
 		wl->state = WLCORE_STATE_RESTARTING;
 		set_bit(WL1271_FLAG_RECOVERY_IN_PROGRESS, &wl->flags);
 		wl1271_ps_elp_wakeup(wl);
@@ -861,11 +858,11 @@ static void wl12xx_read_fwlog_panic(struct wl1271 *wl)
 		wl12xx_cmd_stop_fwlog(wl);
 
 	/* Read the first memory block address */
-	ret = wlcore_fw_status(wl, wl->fw_status_1, wl->fw_status_2);
+	ret = wlcore_fw_status(wl, wl->fw_status);
 	if (ret < 0)
 		goto out;
 
-	addr = le32_to_cpu(wl->fw_status_2->log_start_addr);
+	addr = wl->fw_status->log_start_addr;
 	if (!addr)
 		goto out;
 
@@ -1053,23 +1050,23 @@ static int wlcore_fw_wakeup(struct wl1271 *wl)
 
 static int wl1271_setup(struct wl1271 *wl)
 {
-	wl->fw_status_1 = kzalloc(WLCORE_FW_STATUS_1_LEN(wl->num_rx_desc) +
-				  sizeof(*wl->fw_status_2) +
-				  wl->fw_status_priv_len, GFP_KERNEL);
-	if (!wl->fw_status_1)
-		return -ENOMEM;
+	wl->raw_fw_status = kzalloc(wl->fw_status_len, GFP_KERNEL);
+	if (!wl->raw_fw_status)
+		goto err;
 
-	wl->fw_status_2 = (struct wl_fw_status_2 *)
-				(((u8 *) wl->fw_status_1) +
-				WLCORE_FW_STATUS_1_LEN(wl->num_rx_desc));
+	wl->fw_status = kzalloc(sizeof(*wl->fw_status), GFP_KERNEL);
+	if (!wl->fw_status)
+		goto err;
 
 	wl->tx_res_if = kzalloc(sizeof(*wl->tx_res_if), GFP_KERNEL);
-	if (!wl->tx_res_if) {
-		kfree(wl->fw_status_1);
-		return -ENOMEM;
-	}
+	if (!wl->tx_res_if)
+		goto err;
 
 	return 0;
+err:
+	kfree(wl->fw_status);
+	kfree(wl->raw_fw_status);
+	return -ENOMEM;
 }
 
 static int wl12xx_set_power_on(struct wl1271 *wl)
@@ -1401,7 +1398,7 @@ static struct sk_buff *wl12xx_alloc_dummy_packet(struct wl1271 *wl)
 
 #ifdef CONFIG_PM
 static int
-wl1271_validate_wowlan_pattern(struct cfg80211_wowlan_trig_pkt_pattern *p)
+wl1271_validate_wowlan_pattern(struct cfg80211_pkt_pattern *p)
 {
 	int num_fields = 0, in_field = 0, fields_size = 0;
 	int i, pattern_len = 0;
@@ -1544,9 +1541,9 @@ void wl1271_rx_filter_flatten_fields(struct wl12xx_rx_filter *filter,
  * Allocates an RX filter returned through f
  * which needs to be freed using rx_filter_free()
  */
-static int wl1271_convert_wowlan_pattern_to_rx_filter(
-	struct cfg80211_wowlan_trig_pkt_pattern *p,
-	struct wl12xx_rx_filter **f)
+static int
+wl1271_convert_wowlan_pattern_to_rx_filter(struct cfg80211_pkt_pattern *p,
+					   struct wl12xx_rx_filter **f)
 {
 	int i, j, ret = 0;
 	struct wl12xx_rx_filter *filter;
@@ -1648,7 +1645,7 @@ static int wl1271_configure_wowlan(struct wl1271 *wl,
 
 	/* Translate WoWLAN patterns into filters */
 	for (i = 0; i < wow->n_patterns; i++) {
-		struct cfg80211_wowlan_trig_pkt_pattern *p;
+		struct cfg80211_pkt_pattern *p;
 		struct wl12xx_rx_filter *filter = NULL;
 
 		p = &wow->patterns[i];
@@ -2006,6 +2003,7 @@ static void wlcore_op_stop_locked(struct wl1271 *wl)
 	memset(wl->links_map, 0, sizeof(wl->links_map));
 	memset(wl->roc_map, 0, sizeof(wl->roc_map));
 	memset(wl->session_ids, 0, sizeof(wl->session_ids));
+	memset(wl->rx_filter_enabled, 0, sizeof(wl->rx_filter_enabled));
 	wl->active_sta_count = 0;
 	wl->active_link_count = 0;
 
@@ -2030,9 +2028,10 @@ static void wlcore_op_stop_locked(struct wl1271 *wl)
 
 	wl1271_debugfs_reset(wl);
 
-	kfree(wl->fw_status_1);
-	wl->fw_status_1 = NULL;
-	wl->fw_status_2 = NULL;
+	kfree(wl->raw_fw_status);
+	wl->raw_fw_status = NULL;
+	kfree(wl->fw_status);
+	wl->fw_status = NULL;
 	kfree(wl->tx_res_if);
 	wl->tx_res_if = NULL;
 	kfree(wl->target_mem_map);
@@ -2634,12 +2633,6 @@ static int wl1271_op_add_interface(struct ieee80211_hw *hw,
 		wl->ap_count++;
 	else
 		wl->sta_count++;
-
-	if (wl->fw_type == WL12XX_FW_TYPE_MULTI)
-		ieee80211_roaming_status(vif, false);
-	else
-		ieee80211_roaming_status(vif, true);
-
 out:
 	wl1271_ps_elp_sleep(wl);
 out_unlock:
@@ -2682,10 +2675,8 @@ static void __wl1271_op_remove_interface(struct wl1271 *wl,
 		ieee80211_scan_completed(wl->hw, true);
 	}
 
-	if (wl->sched_vif == wlvif) {
-		ieee80211_sched_scan_stopped(wl->hw);
+	if (wl->sched_vif == wlvif)
 		wl->sched_vif = NULL;
-	}
 
 	if (wl->roc_vif == vif) {
 		wl->roc_vif = NULL;
@@ -2763,12 +2754,7 @@ deinit:
 		goto unlock;
 
 	if (wl->ap_count == 0 && is_ap) {
-		/*
-		 * mask ap events
-		 * TODO: we might want to unify this if block with the
-		 * next one (setting acx_sleep_auth), but currently
-		 * the logic is a bit different (not sure it's intentional)
-		 */
+		/* mask ap events */
 		wl->event_mask &= ~wl->ap_event_mask;
 		wl1271_event_unmask(wl);
 	}
@@ -3053,6 +3039,11 @@ static int wlcore_unset_assoc(struct wl1271 *wl, struct wl12xx_vif *wlvif)
 		ret = wl1271_acx_keep_alive_mode(wl, wlvif, false);
 		if (ret < 0)
 			return ret;
+
+		/* disable beacon filtering */
+		ret = wl1271_acx_beacon_filter_opt(wl, wlvif, false);
+		if (ret < 0)
+			return ret;
 	}
 
 	if (test_and_clear_bit(WLVIF_FLAG_CS_PROGRESS, &wlvif->flags)) {
@@ -3163,20 +3154,11 @@ struct wl1271_filter_params {
 	u8 mc_list[ACX_MC_ADDRESS_GROUP_MAX][ETH_ALEN];
 };
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static u64 wl1271_op_prepare_multicast(struct ieee80211_hw *hw,
 				       struct netdev_hw_addr_list *mc_list)
-#else
-static u64 wl1271_op_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
-				       struct dev_addr_list *mc_list)
-#endif
 {
 	struct wl1271_filter_params *fp;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
-#else
-	int i;
-#endif
 
 	fp = kzalloc(sizeof(*fp), GFP_ATOMIC);
 	if (!fp) {
@@ -3185,40 +3167,16 @@ static u64 wl1271_op_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 	}
 
 	/* update multicast filtering parameters */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	fp->mc_list_length = 0;
 	if (netdev_hw_addr_list_count(mc_list) > ACX_MC_ADDRESS_GROUP_MAX) {
-#else
-	fp->enabled = true;
-	if (mc_count > ACX_MC_ADDRESS_GROUP_MAX) {
-		mc_count = 0;
-#endif
 		fp->enabled = false;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	} else {
 		fp->enabled = true;
 		netdev_hw_addr_list_for_each(ha, mc_list) {
-#else
-	}
-
-	fp->mc_list_length = 0;
-	for (i = 0; i < mc_count; i++) {
-		if (mc_list->da_addrlen == ETH_ALEN) {
-#endif
 			memcpy(fp->mc_list[fp->mc_list_length],
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 					ha->addr, ETH_ALEN);
-#else
-			       mc_list->da_addr, ETH_ALEN);
-#endif
 			fp->mc_list_length++;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		}
-#else
-		} else
-			wl1271_warning("Unknown mc address length.");
-		mc_list = mc_list->next;
-#endif
 	}
 
 	return (u64)(unsigned long)fp;
@@ -3630,6 +3588,10 @@ static void wl1271_op_set_default_key_idx(struct ieee80211_hw *hw,
 	if (vif->dummy_p2p)
 		return;
 
+	/* we don't handle unsetting of default key */
+	if (key_idx == -1)
+		return;
+
 	mutex_lock(&wl->mutex);
 
 	if (unlikely(wl->state != WLCORE_STATE_ON)) {
@@ -3952,7 +3914,7 @@ static int wl1271_ap_set_probe_resp_tmpl(struct wl1271 *wl, u32 rates,
 
 	skb = ieee80211_proberesp_get(wl->hw, vif);
 	if (!skb)
-		return -ENOENT;
+		return -EOPNOTSUPP;
 
 	ret = wl1271_cmd_template_set(wl, wlvif->role_id,
 				      CMD_TEMPL_AP_PROBE_RESPONSE,
@@ -4085,7 +4047,7 @@ static int wlcore_set_beacon_template(struct wl1271 *wl,
 	u16 tmpl_id;
 
 	if (!beacon) {
-		ret = -ENOENT;
+		ret = -EINVAL;
 		goto out;
 	}
 
@@ -4220,11 +4182,11 @@ static void wl1271_bss_info_changed_ap(struct wl1271 *wl,
 			goto out;
 
 		ret = wl1271_ap_set_probe_resp_tmpl(wl, wlvif->basic_rate, vif);
-		if (ret < 0 && ret != -ENOENT)
+		if (ret < 0)
 			goto out;
 
 		ret = wlcore_set_beacon_template(wl, vif, true);
-		if (ret < 0 && ret != -ENOENT)
+		if (ret < 0)
 			goto out;
 	}
 
@@ -4476,6 +4438,13 @@ static void wl1271_bss_info_changed_sta(struct wl1271 *wl,
 			if (ret < 0)
 				goto out;
 		}
+	}
+
+	if ((changed & BSS_CHANGED_BEACON_INFO) && bss_conf->dtim_period) {
+		/* enable beacon filtering */
+		ret = wl1271_acx_beacon_filter_opt(wl, wlvif, true);
+		if (ret < 0)
+			goto out;
 	}
 
 	ret = wl1271_bss_erp_info_changed(wl, vif, bss_conf, changed);
@@ -4830,7 +4799,7 @@ static int wl1271_allocate_sta(struct wl1271 *wl,
 	int ret;
 
 
-	if (wl->active_sta_count >= AP_MAX_STATIONS) {
+	if (wl->active_sta_count >= wl->max_ap_stations) {
 		wl1271_warning("could not allocate HLID - too much stations");
 		return -EBUSY;
 	}
@@ -4915,7 +4884,7 @@ static int wl12xx_sta_remove(struct wl1271 *wl,
 	if (WARN_ON(!test_bit(id, wlvif->ap.sta_hlid_map)))
 		return -EINVAL;
 
-	ret = wl12xx_cmd_remove_peer(wl, wl_sta->hlid);
+	ret = wl12xx_cmd_remove_peer(wl, wlvif, wl_sta->hlid);
 	if (ret < 0)
 		return ret;
 
@@ -5352,6 +5321,10 @@ static void wl12xx_op_channel_switch(struct ieee80211_hw *hw,
 	if (unlikely(wl->state == WLCORE_STATE_OFF)) {
 		wl12xx_for_each_wlvif_sta(wl, wlvif) {
 			struct ieee80211_vif *vif = wl12xx_wlvif_to_vif(wlvif);
+
+			if (!test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
+				continue;
+
 			ieee80211_chswitch_done(vif, false);
 		}
 		goto out;
@@ -5368,6 +5341,9 @@ static void wl12xx_op_channel_switch(struct ieee80211_hw *hw,
 		unsigned long delay_usec;
 
 		if (wl12xx_wlvif_to_vif(wlvif)->dummy_p2p)
+			continue;
+
+		if (!test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
 			continue;
 
 		ret = wl->ops->channel_switch(wl, wlvif, ch_switch);
@@ -5692,10 +5668,7 @@ static struct ieee80211_rate wl1271_rates_5ghz[] = {
 
 /* 5 GHz band channels for WL1273 */
 static struct ieee80211_channel wl1271_channels_5ghz[] = {
-	{ .hw_value = 7, .center_freq = 5035, .max_power = WLCORE_MAX_TXPWR },
 	{ .hw_value = 8, .center_freq = 5040, .max_power = WLCORE_MAX_TXPWR },
-	{ .hw_value = 9, .center_freq = 5045, .max_power = WLCORE_MAX_TXPWR },
-	{ .hw_value = 11, .center_freq = 5055, .max_power = WLCORE_MAX_TXPWR },
 	{ .hw_value = 12, .center_freq = 5060, .max_power = WLCORE_MAX_TXPWR },
 	{ .hw_value = 16, .center_freq = 5080, .max_power = WLCORE_MAX_TXPWR },
 	{ .hw_value = 34, .center_freq = 5170, .max_power = WLCORE_MAX_TXPWR },
@@ -5922,28 +5895,6 @@ static void wl1271_unregister_hw(struct wl1271 *wl)
 
 }
 
-static const struct ieee80211_iface_limit wlcore_iface_limits[] = {
-	{
-		.max = 3,
-		.types = BIT(NL80211_IFTYPE_STATION),
-	},
-	{
-		.max = 1,
-		.types = BIT(NL80211_IFTYPE_AP) |
-			 BIT(NL80211_IFTYPE_P2P_GO) |
-			 BIT(NL80211_IFTYPE_P2P_CLIENT),
-	},
-};
-
-static struct ieee80211_iface_combination
-wlcore_iface_combinations[] = {
-	{
-	  .max_interfaces = 3,
-	  .limits = wlcore_iface_limits,
-	  .n_limits = ARRAY_SIZE(wlcore_iface_limits),
-	},
-};
-
 static int wl1271_init_ieee80211(struct wl1271 *wl)
 {
 	int i;
@@ -5977,7 +5928,8 @@ static int wl1271_init_ieee80211(struct wl1271 *wl)
 		IEEE80211_HW_AP_LINK_PS |
 		IEEE80211_HW_AMPDU_AGGREGATION |
 		IEEE80211_HW_TX_AMPDU_SETUP_IN_HW |
-		IEEE80211_HW_QUEUE_CONTROL;
+		IEEE80211_HW_QUEUE_CONTROL |
+		IEEE80211_HW_CHANCTX_STA_CSA;
 
 	wl->hw->wiphy->cipher_suites = cipher_suites;
 	wl->hw->wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
@@ -6003,7 +5955,8 @@ static int wl1271_init_ieee80211(struct wl1271 *wl)
 	wl->hw->wiphy->max_remain_on_channel_duration = 30000;
 
 	wl->hw->wiphy->flags |= WIPHY_FLAG_AP_UAPSD |
-				WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
+				WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL |
+				WIPHY_FLAG_SUPPORTS_SCHED_SCAN;
 
 	/* make sure all our channels fit in the scanned_ch bitmask */
 	BUILD_BUG_ON(ARRAY_SIZE(wl1271_channels) +
@@ -6065,10 +6018,8 @@ static int wl1271_init_ieee80211(struct wl1271 *wl)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P;
 
 	/* allowed interface combinations */
-	wlcore_iface_combinations[0].num_different_channels = wl->num_channels;
-	wl->hw->wiphy->iface_combinations = wlcore_iface_combinations;
-	wl->hw->wiphy->n_iface_combinations =
-		ARRAY_SIZE(wlcore_iface_combinations);
+	wl->hw->wiphy->iface_combinations = wl->iface_combinations;
+	wl->hw->wiphy->n_iface_combinations = wl->n_iface_combinations;
 
 	SET_IEEE80211_DEV(wl->hw, wl->dev);
 
@@ -6087,8 +6038,6 @@ struct ieee80211_hw *wlcore_alloc_hw(size_t priv_size, u32 aggr_buf_size,
 	struct wl1271 *wl;
 	int i, j, ret;
 	unsigned int order;
-
-	BUILD_BUG_ON(AP_MAX_STATIONS > WL12XX_MAX_LINKS);
 
 	hw = ieee80211_alloc_hw(sizeof(*wl), &wl1271_ops);
 	if (!hw) {
@@ -6111,8 +6060,12 @@ struct ieee80211_hw *wlcore_alloc_hw(size_t priv_size, u32 aggr_buf_size,
 
 	wl->hw = hw;
 
+	/*
+	 * wl->num_links is not configured yet, so just use WLCORE_MAX_LINKS.
+	 * we don't allocate any additional resource here, so that's fine.
+	 */
 	for (i = 0; i < NUM_TX_QUEUES; i++)
-		for (j = 0; j < WL12XX_MAX_LINKS; j++)
+		for (j = 0; j < WLCORE_MAX_LINKS; j++)
 			skb_queue_head_init(&wl->links[j].tx_queue[i]);
 
 	skb_queue_head_init(&wl->deferred_rx_queue);
@@ -6282,7 +6235,8 @@ int wlcore_free_hw(struct wl1271 *wl)
 	kfree(wl->nvs);
 	wl->nvs = NULL;
 
-	kfree(wl->fw_status_1);
+	kfree(wl->raw_fw_status);
+	kfree(wl->fw_status);
 	kfree(wl->tx_res_if);
 	destroy_workqueue(wl->freezable_wq);
 
@@ -6292,6 +6246,15 @@ int wlcore_free_hw(struct wl1271 *wl)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(wlcore_free_hw);
+
+#ifdef CONFIG_PM
+static const struct wiphy_wowlan_support wlcore_wowlan_support = {
+	.flags = WIPHY_WOWLAN_ANY,
+	.n_patterns = WL1271_MAX_RX_FILTERS,
+	.pattern_min_len = 1,
+	.pattern_max_len = WL1271_RX_FILTER_MAX_PATTERN_SIZE,
+};
+#endif
 
 static irqreturn_t wlcore_hardirq(int irq, void *cookie)
 {
@@ -6354,14 +6317,8 @@ static void wlcore_nvs_cb(const struct firmware *fw, void *context)
 	if (!ret) {
 		wl->irq_wake_enabled = true;
 		device_init_wakeup(wl->dev, 1);
-		if (pdata->pwr_in_suspend) {
-			wl->hw->wiphy->wowlan.flags = WIPHY_WOWLAN_ANY;
-			wl->hw->wiphy->wowlan.n_patterns =
-				WL1271_MAX_RX_FILTERS;
-			wl->hw->wiphy->wowlan.pattern_min_len = 1;
-			wl->hw->wiphy->wowlan.pattern_max_len =
-				WL1271_RX_FILTER_MAX_PATTERN_SIZE;
-		}
+		if (pdata->pwr_in_suspend)
+			wl->hw->wiphy->wowlan = &wlcore_wowlan_support;
 	}
 #endif
 	disable_irq(wl->irq);

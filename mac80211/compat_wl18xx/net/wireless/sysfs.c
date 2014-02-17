@@ -43,7 +43,6 @@ static ssize_t name_show(struct device *dev,
 	return sprintf(buf, "%s\n", dev_name(&wiphy->dev));
 }
 
-
 static ssize_t addresses_show(struct device *dev,
 			      struct device_attribute *attr,
 			      char *buf)
@@ -60,6 +59,7 @@ static ssize_t addresses_show(struct device *dev,
 
 	return buf - start;
 }
+
 
 static struct device_attribute ieee80211_dev_attrs[] = {
 	__ATTR_RO(index),
@@ -83,6 +83,7 @@ static int wiphy_uevent(struct device *dev, struct kobj_uevent_env *env)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static void cfg80211_leave_all(struct cfg80211_registered_device *rdev)
 {
 	struct wireless_dev *wdev;
@@ -100,10 +101,10 @@ static int wiphy_suspend(struct device *dev, pm_message_t state)
 
 	rtnl_lock();
 	if (rdev->wiphy.registered) {
-		if (!rdev->wowlan)
+		if (!rdev->wiphy.wowlan_config)
 			cfg80211_leave_all(rdev);
 		if (rdev->ops->suspend)
-			ret = rdev_suspend(rdev, rdev->wowlan);
+			ret = rdev_suspend(rdev, rdev->wiphy.wowlan_config);
 		if (ret == 1) {
 			/* Driver refuse to configure wowlan */
 			cfg80211_leave_all(rdev);
@@ -132,15 +133,14 @@ static int wiphy_resume(struct device *dev)
 
 	return ret;
 }
+#endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static const void *wiphy_namespace(struct device *d)
 {
 	struct wiphy *wiphy = container_of(d, struct wiphy, dev);
 
 	return wiphy_net(wiphy);
 }
-#endif
 
 struct class ieee80211_class = {
 	.name = "ieee80211",
@@ -148,12 +148,12 @@ struct class ieee80211_class = {
 	.dev_release = wiphy_dev_release,
 	.dev_attrs = ieee80211_dev_attrs,
 	.dev_uevent = wiphy_uevent,
+#ifdef CONFIG_PM
 	.suspend = wiphy_suspend,
 	.resume = wiphy_resume,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
+#endif
 	.ns_type = &net_ns_type_operations,
 	.namespace = wiphy_namespace,
-#endif
 };
 
 int wiphy_sysfs_init(void)
