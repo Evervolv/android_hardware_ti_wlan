@@ -1,5 +1,6 @@
 config WL12XX
        tristate "TI wl12xx support"
+       depends on m
 	depends on MAC80211
        select WLCORE
        ---help---

@@ -5,12 +5,12 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels backporting
- * user_namespace.c
+ * Backport functionality introduced in Linux user_namespace.c
  */
 
 #include <linux/module.h>
 #include <linux/highuid.h>
+#include <linux/uidgid.h>
 #include <linux/user_namespace.h>
 
 #ifdef CONFIG_USER_NS

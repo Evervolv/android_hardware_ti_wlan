@@ -6,4 +6,6 @@
 # left.
 
 # new-driver	old-driver
+iwlwifi		iwlagn
+iwl4965		iwlagn
 videodev	v4l2-compat-ioctl32

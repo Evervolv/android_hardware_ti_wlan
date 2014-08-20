@@ -1,6 +1,5 @@
 #include <net/mac80211.h>
 #include <net/rtnetlink.h>
-#include <linux/export.h>
 
 #include "ieee80211_i.h"
 #include "mesh.h"
@@ -18,7 +17,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 
 	ieee80211_scan_cancel(local);
 
-	ieee80211_dfs_cac_cancel(local);
+	ieee80211_dfs_cac_cancel(local, NL80211_RADAR_CAC_ABORTED);
 
 	ieee80211_roc_purge(local, NULL);
 
@@ -38,9 +37,8 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 					IEEE80211_MAX_QUEUE_MAP,
 					IEEE80211_QUEUE_STOP_REASON_SUSPEND);
 
-	/* flush out all packets and station cleanup call_rcu()s */
+	/* flush out all packets */
 	synchronize_net();
-	rcu_barrier();
 
 	ieee80211_flush_queues(local, NULL);
 

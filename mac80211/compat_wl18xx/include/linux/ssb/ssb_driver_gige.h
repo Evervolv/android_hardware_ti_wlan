@@ -7,7 +7,7 @@
 #include <linux/spinlock.h>
 
 
-#ifdef CONFIG_SSB_DRIVER_GIGE
+#ifdef CPTCFG_SSB_DRIVER_GIGE
 
 
 #define SSB_GIGE_PCIIO			0x0000 /* PCI I/O Registers (1024 bytes) */
@@ -108,6 +108,16 @@ static inline int ssb_gige_get_macaddr(struct pci_dev *pdev, u8 *macaddr)
 	return 0;
 }
 
+/* Get the device phy address */
+static inline int ssb_gige_get_phyaddr(struct pci_dev *pdev)
+{
+	struct ssb_gige *dev = pdev_to_ssb_gige(pdev);
+	if (!dev)
+		return -ENODEV;
+
+	return dev->dev->bus->sprom.et0phyaddr;
+}
+
 extern int ssb_gige_pcibios_plat_dev_init(struct ssb_device *sdev,
 					  struct pci_dev *pdev);
 extern int ssb_gige_map_irq(struct ssb_device *sdev,
@@ -124,7 +134,7 @@ static inline void ssb_gige_exit(void)
 }
 
 
-#else /* CONFIG_SSB_DRIVER_GIGE */
+#else /* CPTCFG_SSB_DRIVER_GIGE */
 /* Gigabit Ethernet driver disabled */
 
 
@@ -174,6 +184,10 @@ static inline int ssb_gige_get_macaddr(struct pci_dev *pdev, u8 *macaddr)
 {
 	return -ENODEV;
 }
+static inline int ssb_gige_get_phyaddr(struct pci_dev *pdev)
+{
+	return -ENODEV;
+}
 
-#endif /* CONFIG_SSB_DRIVER_GIGE */
+#endif /* CPTCFG_SSB_DRIVER_GIGE */
 #endif /* LINUX_SSB_DRIVER_GIGE_H_ */

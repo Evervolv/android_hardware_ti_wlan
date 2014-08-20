@@ -5,11 +5,12 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.32.
+ * Backport functionality introduced in Linux 2.6.32.
  */
 
 #include <linux/compat.h>
 #include <linux/netdevice.h>
+#include <linux/time.h>
 
 int __dev_addr_add(struct dev_addr_list **list, int *count,
 		   void *addr, int alen, int glbl)

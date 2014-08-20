@@ -39,7 +39,7 @@ static void wireless_seq_printf_stats(struct seq_file *seq,
 		if (dev->wireless_handlers)
 			stats = &nullstats;
 #endif
-#ifdef CONFIG_CFG80211
+#ifdef CPTCFG_CFG80211
 		if (dev->ieee80211_ptr)
 			stats = &nullstats;
 #endif
@@ -98,11 +98,7 @@ static void *wireless_dev_seq_start(struct seq_file *seq, loff_t *pos)
 		return SEQ_START_TOKEN;
 
 	off = 1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24))
 	for_each_netdev(net, dev)
-#else
-	for_each_netdev(net)
-#endif
 		if (off++ == *pos)
 			return dev;
 	return NULL;

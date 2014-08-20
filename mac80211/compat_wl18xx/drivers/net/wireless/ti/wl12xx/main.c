@@ -41,7 +41,6 @@
 #include "scan.h"
 #include "event.h"
 #include "debugfs.h"
-#include "version.h"
 
 static char *fref_param;
 static char *tcxo_param;
@@ -251,6 +250,7 @@ static struct wlcore_conf wl12xx_conf = {
 		.keep_alive_interval         = 55000,
 		.max_listen_interval         = 20,
 		.sta_sleep_auth              = WL1271_PSM_ILLEGAL,
+		.suspend_rx_ba_activity      = 0,
 	},
 	.itrim = {
 		.enable = false,
@@ -1729,11 +1729,13 @@ static struct wlcore_ops wl12xx_ops = {
 	.convert_hwaddr		= wl12xx_convert_hwaddr,
 	.lnk_high_prio		= wl12xx_lnk_high_prio,
 	.lnk_low_prio		= wl12xx_lnk_low_prio,
+	.interrupt_notify	= NULL,
+	.rx_ba_filter		= NULL,
+	.ap_sleep		= NULL,
 };
 
 static struct ieee80211_sta_ht_cap wl12xx_ht_cap = {
-	.cap = IEEE80211_HT_CAP_GRN_FLD | IEEE80211_HT_CAP_SGI_20 |
-	       (1 << IEEE80211_HT_CAP_RX_STBC_SHIFT),
+	.cap = IEEE80211_HT_CAP_GRN_FLD | IEEE80211_HT_CAP_SGI_20,
 	.ht_supported = true,
 	.ampdu_factor = IEEE80211_HT_MAX_AMPDU_8K,
 	.ampdu_density = IEEE80211_HT_MPDU_DENSITY_8,
@@ -1770,7 +1772,7 @@ wl12xx_iface_combinations[] = {
 static int wl12xx_setup(struct wl1271 *wl)
 {
 	struct wl12xx_priv *priv = wl->priv;
-	struct wlcore_platdev_data *pdev_data = wl->pdev->dev.platform_data;
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&wl->pdev->dev);
 	struct wl12xx_platform_data *pdata = pdev_data->pdata;
 
 	BUILD_BUG_ON(WL12XX_MAX_LINKS > WLCORE_MAX_LINKS);
@@ -1841,7 +1843,6 @@ static int wl12xx_setup(struct wl1271 *wl)
 	if (!priv->rx_mem_addr)
 		return -ENOMEM;
 
-	wl1271_info("wl12xx driver version: %s", wl12xx_git_head);
 	return 0;
 }
 

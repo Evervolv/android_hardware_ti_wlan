@@ -118,7 +118,7 @@ static void rate_control_pid_adjust_rate(struct ieee80211_supported_band *sband,
 			tmp++;
 	} while (tmp < n_bitrates && tmp >= 0);
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	rate_control_pid_event_rate_change(&spinfo->events,
 		spinfo->txrate_idx,
 		sband->bitrates[spinfo->txrate_idx].bitrate);
@@ -201,7 +201,7 @@ static void rate_control_pid_sample(struct rc_pid_info *pinfo,
 	if (spinfo->sharp_cnt)
 			spinfo->sharp_cnt--;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	rate_control_pid_event_pf_sample(&spinfo->events, pf, err_prop, err_int,
 					 err_der);
 #endif
@@ -235,7 +235,7 @@ static void rate_control_pid_tx_status(void *priv, struct ieee80211_supported_ba
 
 	spinfo->tx_num_xmit++;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	rate_control_pid_event_tx_status(&spinfo->events, info);
 #endif
 
@@ -285,7 +285,7 @@ rate_control_pid_get_rate(void *priv, struct ieee80211_sta *sta,
 
 	info->control.rates[0].idx = rateidx;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	rate_control_pid_event_tx_rate(&spinfo->events,
 		rateidx, sband->bitrates[rateidx].bitrate);
 #endif
@@ -344,7 +344,7 @@ static void *rate_control_pid_alloc(struct ieee80211_hw *hw,
 	struct rc_pid_rateinfo *rinfo;
 	struct ieee80211_supported_band *sband;
 	int i, max_rates = 0;
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct rc_pid_debugfs_entries *de;
 #endif
 
@@ -376,7 +376,7 @@ static void *rate_control_pid_alloc(struct ieee80211_hw *hw,
 	pinfo->rinfo = rinfo;
 	pinfo->oldrate = 0;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	de = &pinfo->dentries;
 	de->target = debugfs_create_u32("target_pf", S_IRUSR | S_IWUSR,
 					debugfsdir, &pinfo->target);
@@ -409,7 +409,7 @@ static void *rate_control_pid_alloc(struct ieee80211_hw *hw,
 static void rate_control_pid_free(void *priv)
 {
 	struct rc_pid_info *pinfo = priv;
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct rc_pid_debugfs_entries *de = &pinfo->dentries;
 
 	debugfs_remove(de->norm_offset);
@@ -438,7 +438,7 @@ static void *rate_control_pid_alloc_sta(void *priv, struct ieee80211_sta *sta,
 
 	spinfo->last_sample = jiffies;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	spin_lock_init(&spinfo->events.lock);
 	init_waitqueue_head(&spinfo->events.waitqueue);
 #endif
@@ -452,7 +452,7 @@ static void rate_control_pid_free_sta(void *priv, struct ieee80211_sta *sta,
 	kfree(priv_sta);
 }
 
-static struct rate_control_ops mac80211_rcpid = {
+static const struct rate_control_ops mac80211_rcpid = {
 	.name = "pid",
 	.tx_status = rate_control_pid_tx_status,
 	.get_rate = rate_control_pid_get_rate,
@@ -461,7 +461,7 @@ static struct rate_control_ops mac80211_rcpid = {
 	.free = rate_control_pid_free,
 	.alloc_sta = rate_control_pid_alloc_sta,
 	.free_sta = rate_control_pid_free_sta,
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	.add_sta_debugfs = rate_control_pid_add_sta_debugfs,
 	.remove_sta_debugfs = rate_control_pid_remove_sta_debugfs,
 #endif

@@ -17,6 +17,9 @@
 #include "nl80211.h"
 #include "rdev-ops.h"
 
+static unsigned int dfs_nop_time_ms = IEEE80211_DFS_MIN_NOP_TIME_MS;
+module_param(dfs_nop_time_ms, uint, 0644);
+MODULE_PARM_DESC(dfs_nop_time_ms, "DFS NOP time (in ms)");
 
 void cfg80211_rx_assoc_resp(struct net_device *dev, struct cfg80211_bss *bss,
 			    const u8 *buf, size_t len)
@@ -173,7 +176,7 @@ void cfg80211_michael_mic_failure(struct net_device *dev, const u8 *addr,
 {
 	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
-#ifdef CONFIG_CFG80211_WEXT
+#ifdef CPTCFG_CFG80211_WEXT
 	union iwreq_data wrqu;
 	char *buf = kmalloc(128, gfp);
 
@@ -233,14 +236,8 @@ int cfg80211_mlme_auth(struct cfg80211_registered_device *rdev,
 	if (!req.bss)
 		return -ENOENT;
 
-	err = cfg80211_can_use_chan(rdev, wdev, req.bss->channel,
-				    CHAN_MODE_SHARED);
-	if (err)
-		goto out;
-
 	err = rdev_auth(rdev, dev, &req);
 
-out:
 	cfg80211_put_bss(&rdev->wiphy, req.bss);
 	return err;
 }
@@ -306,16 +303,10 @@ int cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 	if (!req->bss)
 		return -ENOENT;
 
-	err = cfg80211_can_use_chan(rdev, wdev, chan, CHAN_MODE_SHARED);
-	if (err)
-		goto out;
-
 	err = rdev_assoc(rdev, dev, req);
 	if (!err)
 		cfg80211_hold_bss(bss_from_pub(req->bss));
-
-out:
-	if (err)
+	else
 		cfg80211_put_bss(&rdev->wiphy, req->bss);
 
 	return err;
@@ -520,9 +511,7 @@ void cfg80211_mlme_purge_registrations(struct wireless_dev *wdev)
 
 int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 			  struct wireless_dev *wdev,
-			  struct ieee80211_channel *chan, bool offchan,
-			  unsigned int wait, const u8 *buf, size_t len,
-			  bool no_cck, bool dont_wait_for_ack, u64 *cookie)
+			  struct cfg80211_mgmt_tx_params *params, u64 *cookie)
 {
 	const struct ieee80211_mgmt *mgmt;
 	u16 stype;
@@ -533,10 +522,10 @@ int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 	if (!rdev->ops->mgmt_tx)
 		return -EOPNOTSUPP;
 
-	if (len < 24 + 1)
+	if (params->len < 24 + 1)
 		return -EINVAL;
 
-	mgmt = (const struct ieee80211_mgmt *) buf;
+	mgmt = (const struct ieee80211_mgmt *)params->buf;
 
 	if (!ieee80211_is_mgmt(mgmt->frame_control))
 		return -EINVAL;
@@ -615,9 +604,7 @@ int cfg80211_mlme_mgmt_tx(struct cfg80211_registered_device *rdev,
 		return -EINVAL;
 
 	/* Transmit the Action frame as requested by user space */
-	return rdev_mgmt_tx(rdev, wdev, chan, offchan,
-			    wait, buf, len, no_cck, dont_wait_for_ack,
-			    cookie);
+	return rdev_mgmt_tx(rdev, wdev, params, cookie);
 }
 
 bool cfg80211_rx_mgmt(struct wireless_dev *wdev, int freq, int sig_mbm,
@@ -707,11 +694,13 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 			if (c->dfs_state != NL80211_DFS_UNAVAILABLE)
 				continue;
 
-			timeout = c->dfs_state_entered +
-				  IEEE80211_DFS_MIN_NOP_TIME_MS;
+			timeout = c->dfs_state_entered + msecs_to_jiffies(
+					dfs_nop_time_ms);
 
 			if (time_after_eq(jiffies, timeout)) {
 				c->dfs_state = NL80211_DFS_USABLE;
+				c->dfs_state_entered = jiffies;
+
 				cfg80211_chandef_create(&chandef, c,
 							NL80211_CHAN_NO_HT);
 
@@ -736,15 +725,11 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 				   next_time);
 }
 
-
-void cfg80211_radar_event(struct wiphy *wiphy,
-			  struct cfg80211_chan_def *chandef,
-			  gfp_t gfp)
+void cfg80211_disable_dfs_channel(struct wiphy *wiphy,
+				  const struct cfg80211_chan_def *chandef)
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
 	unsigned long timeout;
-
-	trace_cfg80211_radar_event(wiphy, chandef);
 
 	/* only set the chandef supplied channel to unavailable, in
 	 * case the radar is detected on only one of multiple channels
@@ -752,21 +737,31 @@ void cfg80211_radar_event(struct wiphy *wiphy,
 	 */
 	cfg80211_set_dfs_state(wiphy, chandef, NL80211_DFS_UNAVAILABLE);
 
-	timeout = msecs_to_jiffies(IEEE80211_DFS_MIN_NOP_TIME_MS);
+	timeout = msecs_to_jiffies(dfs_nop_time_ms);
 	queue_delayed_work(cfg80211_wq, &rdev->dfs_update_channels_wk,
 			   timeout);
+}
 
+void cfg80211_radar_event(struct wiphy *wiphy,
+			  struct cfg80211_chan_def *chandef,
+			  gfp_t gfp)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	trace_cfg80211_radar_event(wiphy, chandef);
+
+	cfg80211_disable_dfs_channel(wiphy, chandef);
 	nl80211_radar_notify(rdev, chandef, NL80211_RADAR_DETECTED, NULL, gfp);
 }
 EXPORT_SYMBOL(cfg80211_radar_event);
 
 void cfg80211_cac_event(struct net_device *netdev,
+			const struct cfg80211_chan_def *chandef,
 			enum nl80211_radar_event event, gfp_t gfp)
 {
 	struct wireless_dev *wdev = netdev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
-	struct cfg80211_chan_def chandef;
 	unsigned long timeout;
 
 	trace_cfg80211_cac_event(netdev, event);
@@ -774,17 +769,17 @@ void cfg80211_cac_event(struct net_device *netdev,
 	if (WARN_ON(!wdev->cac_started))
 		return;
 
-	if (WARN_ON(!wdev->channel))
+	if (WARN_ON(!wdev->chandef.chan))
 		return;
-
-	cfg80211_chandef_create(&chandef, wdev->channel, NL80211_CHAN_NO_HT);
 
 	switch (event) {
 	case NL80211_RADAR_CAC_FINISHED:
 		timeout = wdev->cac_start_time +
-			  msecs_to_jiffies(IEEE80211_DFS_MIN_CAC_TIME_MS);
-		WARN_ON(!time_after_eq(jiffies, timeout));
-		cfg80211_set_dfs_state(wiphy, &chandef, NL80211_DFS_AVAILABLE);
+			  msecs_to_jiffies(wdev->cac_time_ms);
+		cfg80211_set_dfs_state(wiphy, chandef, NL80211_DFS_AVAILABLE);
+		break;
+	case NL80211_RADAR_DETECTED:
+		cfg80211_disable_dfs_channel(wiphy, chandef);
 		break;
 	case NL80211_RADAR_CAC_ABORTED:
 		break;
@@ -794,6 +789,6 @@ void cfg80211_cac_event(struct net_device *netdev,
 	}
 	wdev->cac_started = false;
 
-	nl80211_radar_notify(rdev, &chandef, event, netdev, gfp);
+	nl80211_radar_notify(rdev, chandef, event, netdev, gfp);
 }
 EXPORT_SYMBOL(cfg80211_cac_event);

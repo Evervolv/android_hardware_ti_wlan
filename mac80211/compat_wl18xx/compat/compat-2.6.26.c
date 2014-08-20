@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.26.
+ * Backport functionality introduced in Linux 2.6.26.
  *
  * Copyright holders from ported work:
  *
@@ -13,11 +13,9 @@
  * Copyright (c) 2006-2007 Greg Kroah-Hartman <greg@kroah.com>
  * Copyright (c) 2006-2007 Novell Inc.
  */
-
+#include <linux/device.h>
+#include <net/sock.h>
 #include <net/compat.h>
-
-/* 2.6.24 does not have the struct kobject with a name */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25))
 
 /**
  * kobject_set_name_vargs - Set the name of an kobject
@@ -46,27 +44,6 @@ int kobject_set_name_vargs(struct kobject *kobj, const char *fmt,
 	kfree(old_name);
 	return 0;
 }
-#else
-static
-int kobject_set_name_vargs(struct kobject *kobj, const char *fmt,
-				  va_list vargs)
-{
-	struct device *dev;
-	unsigned int len;
-	va_list aq;
-
-	dev = container_of(kobj, struct device, kobj);
-
-	va_copy(aq, vargs);
-	len = vsnprintf(NULL, 0, fmt, aq);
-	va_end(aq);
-
-	len = len < BUS_ID_SIZE ? (len + 1) : BUS_ID_SIZE;
-
-	vsnprintf(dev->bus_id, len, fmt, vargs);
-	return 0;
-}
-#endif
 
 /**
  * dev_set_name - set a device name

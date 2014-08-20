@@ -1,5 +1,10 @@
-#include <linux/version.h>
-
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,37))
+/* Automatically created during backport process */
+#ifndef CPTCFG_BACKPORT_BUILD_AVERAGE
 #include_next <linux/average.h>
-#endif /* (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,37)) */
+#else
+#undef ewma_init
+#define ewma_init LINUX_BACKPORT(ewma_init)
+#undef ewma_add
+#define ewma_add LINUX_BACKPORT(ewma_add)
+#include <linux/backport-average.h>
+#endif /* CPTCFG_BACKPORT_BUILD_AVERAGE */

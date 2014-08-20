@@ -47,7 +47,7 @@ int wl18xx_wait_for_event(struct wl1271 *wl, enum wlcore_wait_event event,
 	return wlcore_cmd_wait_for_event_or_timeout(wl, local_event, timeout);
 }
 
-#ifdef CONFIG_NL80211_TESTMODE
+#ifdef CPTCFG_NL80211_TESTMODE
 static int wlcore_smart_config_sync_event(struct wl1271 *wl, u8 sync_channel,
 					  u8 sync_band)
 {
@@ -104,7 +104,7 @@ static int wlcore_smart_config_decode_event(struct wl1271 *wl,
 static int wlcore_smart_config_sync_event(struct wl1271 *wl, u8 sync_channel,
 					  u8 sync_band)
 {
-	wl1271_error("got SMART_CONFIG event, but CONFIG_NL80211_TESTMODE is not configured!");
+	wl1271_error("got SMART_CONFIG event, but CPTCFG_NL80211_TESTMODE is not configured!");
 	return -EINVAL;
 }
 
@@ -112,7 +112,7 @@ static int wlcore_smart_config_decode_event(struct wl1271 *wl,
 					    u8 ssid_len, u8 *ssid,
 					    u8 pwd_len, u8 *pwd)
 {
-	wl1271_error("got SMART_CONFIG event, but CONFIG_NL80211_TESTMODE is not configured!");
+	wl1271_error("got SMART_CONFIG event, but CPTCFG_NL80211_TESTMODE is not configured!");
 	return -EINVAL;
 }
 #endif
@@ -131,6 +131,14 @@ int wl18xx_process_mailbox_events(struct wl1271 *wl)
 
 		if (wl->scan_wlvif)
 			wl18xx_scan_completed(wl, wl->scan_wlvif);
+	}
+
+	if (vector & RADAR_DETECTED_EVENT_ID) {
+		wl1271_debug(DEBUG_EVENT, "radar event: channel %d",
+			     mbox->radar_channel);
+
+		printk("radar channel: %d\n", mbox->radar_channel);
+		ieee80211_radar_detected(wl->hw);
 	}
 
 	if (vector & PERIODIC_SCAN_REPORT_EVENT_ID) {

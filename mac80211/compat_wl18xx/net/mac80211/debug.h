@@ -2,73 +2,79 @@
 #define __MAC80211_DEBUG_H
 #include <net/cfg80211.h>
 
-#ifdef CONFIG_MAC80211_IBSS_DEBUG
+#ifdef CPTCFG_MAC80211_IBSS_DEBUG
 #define MAC80211_IBSS_DEBUG 1
 #else
 #define MAC80211_IBSS_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_PS_DEBUG
+#ifdef CPTCFG_MAC80211_PS_DEBUG
 #define MAC80211_PS_DEBUG 1
 #else
 #define MAC80211_PS_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_HT_DEBUG
+#ifdef CPTCFG_MAC80211_HT_DEBUG
 #define MAC80211_HT_DEBUG 1
 #else
 #define MAC80211_HT_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MPL_DEBUG
+#ifdef CPTCFG_MAC80211_MPL_DEBUG
 #define MAC80211_MPL_DEBUG 1
 #else
 #define MAC80211_MPL_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MPATH_DEBUG
+#ifdef CPTCFG_MAC80211_MPATH_DEBUG
 #define MAC80211_MPATH_DEBUG 1
 #else
 #define MAC80211_MPATH_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MHWMP_DEBUG
+#ifdef CPTCFG_MAC80211_MHWMP_DEBUG
 #define MAC80211_MHWMP_DEBUG 1
 #else
 #define MAC80211_MHWMP_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MESH_SYNC_DEBUG
+#ifdef CPTCFG_MAC80211_MESH_SYNC_DEBUG
 #define MAC80211_MESH_SYNC_DEBUG 1
 #else
 #define MAC80211_MESH_SYNC_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MESH_PS_DEBUG
+#ifdef CPTCFG_MAC80211_MESH_CSA_DEBUG
+#define MAC80211_MESH_CSA_DEBUG 1
+#else
+#define MAC80211_MESH_CSA_DEBUG 0
+#endif
+
+#ifdef CPTCFG_MAC80211_MESH_PS_DEBUG
 #define MAC80211_MESH_PS_DEBUG 1
 #else
 #define MAC80211_MESH_PS_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_TDLS_DEBUG
+#ifdef CPTCFG_MAC80211_TDLS_DEBUG
 #define MAC80211_TDLS_DEBUG 1
 #else
 #define MAC80211_TDLS_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_STA_DEBUG
+#ifdef CPTCFG_MAC80211_STA_DEBUG
 #define MAC80211_STA_DEBUG 1
 #else
 #define MAC80211_STA_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MLME_DEBUG
+#ifdef CPTCFG_MAC80211_MLME_DEBUG
 #define MAC80211_MLME_DEBUG 1
 #else
 #define MAC80211_MLME_DEBUG 0
 #endif
 
-#ifdef CONFIG_MAC80211_MESSAGE_TRACING
+#ifdef CPTCFG_MAC80211_MESSAGE_TRACING
 void __sdata_info(const char *fmt, ...) __printf(1, 2);
 void __sdata_dbg(bool print, const char *fmt, ...) __printf(2, 3);
 void __sdata_err(const char *fmt, ...) __printf(1, 2);
@@ -155,6 +161,10 @@ do {									\
 
 #define msync_dbg(sdata, fmt, ...)					\
 	_sdata_dbg(MAC80211_MESH_SYNC_DEBUG,				\
+		   sdata, fmt, ##__VA_ARGS__)
+
+#define mcsa_dbg(sdata, fmt, ...)					\
+	_sdata_dbg(MAC80211_MESH_CSA_DEBUG,				\
 		   sdata, fmt, ##__VA_ARGS__)
 
 #define mps_dbg(sdata, fmt, ...)					\

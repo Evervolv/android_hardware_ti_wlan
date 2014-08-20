@@ -35,6 +35,19 @@ Module.symvers
 !.gitignore
 
 # MAC80211 generated files
+Kconfig.kernel
+Kconfig.versions
+.kernel_config_md5
+.config
+.config.old
+.tmp_*
+*.cmd
+*.tmp
+*.ver
+mac80211/compat_wl18xx/backport-include/backport/autoconf.h
+mac80211/compat_wl18xx/kconf/mconf
+mac80211/compat_wl18xx/kconf/conf
+.tmp_versions
 modules
 compat_autoconf.h
 mac80211/compat_wl12xx/net/wireless/regdb.c

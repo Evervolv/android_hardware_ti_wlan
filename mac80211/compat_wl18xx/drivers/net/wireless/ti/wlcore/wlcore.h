@@ -117,6 +117,9 @@ struct wlcore_ops {
 			      struct wl1271_link *lnk);
 	bool (*lnk_low_prio)(struct wl1271 *wl, u8 hlid,
 			     struct wl1271_link *lnk);
+	int (*interrupt_notify)(struct wl1271 *wl, bool action);
+	int (*rx_ba_filter)(struct wl1271 *wl, bool action);
+	int (*ap_sleep)(struct wl1271 *wl);
 	int (*smart_config_start)(struct wl1271 *wl, u32 group_bitmap);
 	int (*smart_config_stop)(struct wl1271 *wl);
 	int (*smart_config_set_group_key)(struct wl1271 *wl, u16 group_id,
@@ -190,7 +193,9 @@ struct wl1271 {
 	bool initialized;
 	struct ieee80211_hw *hw;
 	bool mac80211_registered;
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
+	struct compat_threaded_irq irq_compat;
+#endif
 	struct device *dev;
 	struct platform_device *pdev;
 
@@ -479,7 +484,7 @@ struct wl1271 {
 	size_t fw_status_priv_len;
 
 	/* RX Data filter rule state - enabled/disabled */
-	bool rx_filter_enabled[WL1271_MAX_RX_FILTERS];
+	unsigned long rx_filter_enabled[BITS_TO_LONGS(WL1271_MAX_RX_FILTERS)];
 
 	/* size of the private static data */
 	size_t static_data_priv_len;

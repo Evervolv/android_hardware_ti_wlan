@@ -395,6 +395,8 @@ void ieee80211_sw_roc_work(struct work_struct *work)
 
 		if (started)
 			ieee80211_start_next_roc(local);
+		else if (list_empty(&local->roc_list))
+			ieee80211_run_deferred_scan(local);
 	}
 
  out_unlock:
@@ -418,7 +420,8 @@ static void ieee80211_hw_roc_done(struct work_struct *work)
 	if (!roc->started)
 		goto out_unlock;
 
-	if (local->expired_roc_cookie != (unsigned long) roc)
+	if (local->expired_roc_cookie &&
+	    local->expired_roc_cookie != (unsigned long) roc)
 		goto out_unlock;
 
 	list_del(&roc->list);

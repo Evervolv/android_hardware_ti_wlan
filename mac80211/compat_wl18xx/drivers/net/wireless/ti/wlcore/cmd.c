@@ -60,8 +60,8 @@ static int __wlcore_cmd_send(struct wl1271 *wl, u16 id, void *buf,
 	u16 status;
 	u16 poll_count = 0;
 
-	if (unlikely(wl->state == WLCORE_STATE_RESTARTING) &&
-		     id != CMD_STOP_FWLOGGER)
+	if (unlikely(wl->state == WLCORE_STATE_RESTARTING &&
+		     id != CMD_STOP_FWLOGGER))
 		return -EIO;
 
 	cmd = buf;
@@ -1696,9 +1696,15 @@ int wlcore_cmd_regdomain_config_locked(struct wl1271 *wl)
 			channel = &band->channels[i];
 			ch = channel->hw_value;
 
-			if (channel->flags & (IEEE80211_CHAN_DISABLED |
-					      IEEE80211_CHAN_RADAR |
-					      IEEE80211_CHAN_PASSIVE_SCAN))
+			if (channel->flags & IEEE80211_CHAN_DISABLED)
+				continue;
+
+			if ((channel->flags & IEEE80211_CHAN_NO_IR) &&
+			    !(channel->flags & IEEE80211_CHAN_RADAR))
+				continue;
+
+			if ((channel->flags & IEEE80211_CHAN_RADAR) &&
+			    channel->dfs_state != NL80211_DFS_AVAILABLE)
 				continue;
 
 			ch_bit_idx = wlcore_get_reg_conf_ch_idx(b, ch);
@@ -2049,5 +2055,86 @@ int wl12xx_stop_dev(struct wl1271 *wl, struct wl12xx_vif *wlvif)
 	}
 
 out:
+	return ret;
+}
+
+int wlcore_set_cac(struct wl1271 *wl, struct wl12xx_vif *wlvif, bool start)
+{
+	struct wlcore_cmd_cac_start *cmd;
+	int ret = 0;
+
+	wl1271_debug(DEBUG_CMD, "cmd cac (channel %d) %s",
+		     wlvif->channel, start ? "start" : "stop");
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd)
+		return -ENOMEM;
+
+	cmd->role_id = wlvif->role_id;
+	cmd->channel = wlvif->channel;
+	if (wlvif->band == IEEE80211_BAND_5GHZ)
+		cmd->band = WLCORE_BAND_5GHZ;
+	/* TODO: bandwidth == channel_type? */
+	cmd->bandwidth = wlcore_get_native_channel_type(wlvif->channel_type);
+
+	ret = wl1271_cmd_send(wl, start ? CMD_CAC_START : CMD_CAC_STOP,
+			      cmd, sizeof(*cmd), 0);
+	if (ret < 0) {
+		wl1271_error("failed to send cac command");
+		goto out_free;
+	}
+out_free:
+	kfree(cmd);
+	return ret;
+}
+
+int wlcore_radar_detection_debug(struct wl1271 *wl, u8 channel)
+{
+	struct wlcore_cmd_dfs_radar_detection_cmd *cmd;
+	int ret = 0;
+
+	wl1271_debug(DEBUG_CMD, "cmd radar detection debug (chan %d)",
+		     channel);
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd)
+		return -ENOMEM;
+
+	cmd->channel = channel;
+
+	ret = wl1271_cmd_send(wl, CMD_DFS_RADAR_DETECTION_DEBUG,
+			      cmd, sizeof(*cmd), 0);
+	if (ret < 0) {
+		wl1271_error("failed to send radar detection debug command");
+		goto out_free;
+	}
+out_free:
+	kfree(cmd);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(wlcore_radar_detection_debug);
+
+int wlcore_cmd_dfs_master_restart(struct wl1271 *wl, struct wl12xx_vif *wlvif)
+{
+	struct wlcore_cmd_dfs_master_restart *cmd;
+	int ret = 0;
+
+	wl1271_debug(DEBUG_CMD, "cmd dfs master restart (role %d)",
+		     wlvif->role_id);
+
+	cmd = kzalloc(sizeof(*cmd), GFP_KERNEL);
+	if (!cmd)
+		return -ENOMEM;
+
+	cmd->role_id = wlvif->role_id;
+
+	ret = wl1271_cmd_send(wl, CMD_DFS_MASTER_RESTART,
+			      cmd, sizeof(*cmd), 0);
+	if (ret < 0) {
+		wl1271_error("failed to send dfs master restart command");
+		goto out_free;
+	}
+out_free:
+	kfree(cmd);
 	return ret;
 }

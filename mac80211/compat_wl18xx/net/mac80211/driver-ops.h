@@ -228,34 +228,32 @@ static inline void drv_bss_info_changed(struct ieee80211_local *local,
 }
 
 static inline u64 drv_prepare_multicast(struct ieee80211_local *local,
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 					struct netdev_hw_addr_list *mc_list)
+#else
+					int mc_count,
+					struct dev_addr_list *mc_list)
+#endif
 {
 	u64 ret = 0;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	trace_drv_prepare_multicast(local, mc_list->count);
+#else
+	trace_drv_prepare_multicast(local, mc_count);
+#endif
 
 	if (local->ops->prepare_multicast)
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 		ret = local->ops->prepare_multicast(&local->hw, mc_list);
+#else
+		ret = local->ops->prepare_multicast(&local->hw, mc_count,
+						    mc_list);
+#endif
 
 	trace_drv_return_u64(local, ret);
 
 	return ret;
-}
-
-static inline void drv_set_multicast_list(struct ieee80211_local *local,
-					  struct ieee80211_sub_if_data *sdata,
-					  struct netdev_hw_addr_list *mc_list)
-{
-	bool allmulti = sdata->flags & IEEE80211_SDATA_ALLMULTI;
-
-	trace_drv_set_multicast_list(local, sdata, mc_list->count);
-
-	check_sdata_in_driver(sdata);
-
-	if (local->ops->set_multicast_list)
-		local->ops->set_multicast_list(&local->hw, &sdata->vif,
-					       allmulti, mc_list);
-	trace_drv_return_void(local);
 }
 
 static inline void drv_configure_filter(struct ieee80211_local *local,
@@ -370,16 +368,20 @@ drv_sched_scan_start(struct ieee80211_local *local,
 	return ret;
 }
 
-static inline void drv_sched_scan_stop(struct ieee80211_local *local,
-				       struct ieee80211_sub_if_data *sdata)
+static inline int drv_sched_scan_stop(struct ieee80211_local *local,
+				      struct ieee80211_sub_if_data *sdata)
 {
+	int ret;
+
 	might_sleep();
 
 	check_sdata_in_driver(sdata);
 
 	trace_drv_sched_scan_stop(local, sdata);
-	local->ops->sched_scan_stop(&local->hw, &sdata->vif);
-	trace_drv_return_void(local);
+	ret = local->ops->sched_scan_stop(&local->hw, &sdata->vif);
+	trace_drv_return_int(local, ret);
+
+	return ret;
 }
 
 static inline void drv_sw_scan_start(struct ieee80211_local *local)
@@ -518,7 +520,7 @@ static inline void drv_sta_remove(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 static inline void drv_sta_add_debugfs(struct ieee80211_local *local,
 				       struct ieee80211_sub_if_data *sdata,
 				       struct ieee80211_sta *sta,
@@ -549,6 +551,22 @@ static inline void drv_sta_remove_debugfs(struct ieee80211_local *local,
 					       sta, dir);
 }
 #endif
+
+static inline void drv_sta_pre_rcu_remove(struct ieee80211_local *local,
+					  struct ieee80211_sub_if_data *sdata,
+					  struct sta_info *sta)
+{
+	might_sleep();
+
+	sdata = get_bss_sdata(sdata);
+	check_sdata_in_driver(sdata);
+
+	trace_drv_sta_pre_rcu_remove(local, sdata, &sta->sta);
+	if (local->ops->sta_pre_rcu_remove)
+		local->ops->sta_pre_rcu_remove(&local->hw, &sdata->vif,
+					       &sta->sta);
+	trace_drv_return_void(local);
+}
 
 static inline __must_check
 int drv_sta_state(struct ieee80211_local *local,

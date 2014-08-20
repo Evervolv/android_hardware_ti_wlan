@@ -928,7 +928,6 @@ struct wl12xx_acx_config_hangover {
 	u8 padding[2];
 } __packed;
 
-
 struct acx_default_rx_filter {
 	struct acx_header header;
 	u8 enable;
@@ -1121,7 +1120,7 @@ int wl1271_acx_ps_rx_streaming(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 int wl1271_acx_ap_max_tx_retry(struct wl1271 *wl, struct wl12xx_vif *wlvif);
 int wl12xx_acx_config_ps(struct wl1271 *wl, struct wl12xx_vif *wlvif);
 int wl1271_acx_set_inconnection_sta(struct wl1271 *wl,
-				    struct wl12xx_vif *wlvif,u8 *addr);
+				    struct wl12xx_vif *wlvif, u8 *addr);
 int wl1271_acx_fm_coex(struct wl1271 *wl);
 int wl12xx_acx_set_rate_mgmt_params(struct wl1271 *wl);
 int wl12xx_acx_config_hangover(struct wl1271 *wl);

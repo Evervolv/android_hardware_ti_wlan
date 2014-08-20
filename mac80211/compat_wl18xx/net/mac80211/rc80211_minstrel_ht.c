@@ -63,7 +63,7 @@
 
 #define CCK_DURATION(_bitrate, _short, _len)		\
 	(1000 * (10 /* SIFS */ +			\
-	 (_short ? 72 + 24 : 144 + 48 ) +		\
+	 (_short ? 72 + 24 : 144 + 48) +		\
 	 (8 * (_len + 4) * 10) / (_bitrate)))
 
 #define CCK_ACK_DURATION(_bitrate, _short)			\
@@ -124,7 +124,7 @@ const struct mcs_group minstrel_mcs_groups[] = {
 
 #define MINSTREL_CCK_GROUP	(ARRAY_SIZE(minstrel_mcs_groups) - 1)
 
-static u8 sample_table[SAMPLE_COLUMNS][MCS_GROUP_RATES];
+static u8 sample_table[SAMPLE_COLUMNS][MCS_GROUP_RATES] __read_mostly;
 
 static void
 minstrel_ht_update_rates(struct minstrel_priv *mp, struct minstrel_ht_sta *mi);
@@ -135,7 +135,7 @@ minstrel_ht_update_rates(struct minstrel_priv *mp, struct minstrel_ht_sta *mi);
 static int
 minstrel_ht_get_group_idx(struct ieee80211_tx_rate *rate)
 {
-	return GROUP_IDX((rate->idx / MCS_GROUP_RATES) + 1,
+	return GROUP_IDX((rate->idx / 8) + 1,
 			 !!(rate->flags & IEEE80211_TX_RC_SHORT_GI),
 			 !!(rate->flags & IEEE80211_TX_RC_40_MHZ_WIDTH));
 }
@@ -148,7 +148,7 @@ minstrel_ht_get_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi,
 
 	if (rate->flags & IEEE80211_TX_RC_MCS) {
 		group = minstrel_ht_get_group_idx(rate);
-		idx = rate->idx % MCS_GROUP_RATES;
+		idx = rate->idx % 8;
 	} else {
 		group = MINSTREL_CCK_GROUP;
 
@@ -226,7 +226,7 @@ minstrel_ht_calc_tp(struct minstrel_ht_sta *mi, int group, int rate)
 		nsecs = 1000 * mi->overhead / MINSTREL_TRUNC(mi->avg_ampdu_len);
 
 	nsecs += minstrel_mcs_groups[group].duration[rate];
-	tp = 1000000 * ((mr->probability * 1000) / nsecs);
+	tp = 1000000 * ((prob * 1000) / nsecs);
 
 	mr->cur_tp = MINSTREL_TRUNC(tp);
 }
@@ -277,13 +277,15 @@ minstrel_ht_update_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
 			if (!(mg->supported & BIT(i)))
 				continue;
 
+			index = MCS_GROUP_RATES * group + i;
+
 			/* initialize rates selections starting indexes */
 			if (!mg_rates_valid) {
 				mg->max_tp_rate = mg->max_tp_rate2 =
 					mg->max_prob_rate = i;
 				if (!mi_rates_valid) {
 					mi->max_tp_rate = mi->max_tp_rate2 =
-						mi->max_prob_rate = i;
+						mi->max_prob_rate = index;
 					mi_rates_valid = true;
 				}
 				mg_rates_valid = true;
@@ -291,7 +293,6 @@ minstrel_ht_update_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
 
 			mr = &mg->rates[i];
 			mr->retry_updated = false;
-			index = MCS_GROUP_RATES * group + i;
 			minstrel_calc_rate_ewma(mr);
 			minstrel_ht_calc_tp(mi, group, i);
 
@@ -365,7 +366,7 @@ minstrel_ht_update_stats(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
 		}
 	}
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	/* use fixed index if set */
 	if (mp->fixed_rate_idx != -1) {
 		mi->max_tp_rate = mp->fixed_rate_idx;
@@ -636,8 +637,7 @@ minstrel_ht_set_rate(struct minstrel_priv *mp, struct minstrel_ht_sta *mi,
 		idx = mp->cck_rates[index % ARRAY_SIZE(mp->cck_rates)];
 		flags = 0;
 	} else {
-		idx = index % MCS_GROUP_RATES +
-		      (group->streams - 1) * MCS_GROUP_RATES;
+		idx = index % MCS_GROUP_RATES + (group->streams - 1) * 8;
 		flags = IEEE80211_TX_RC_MCS | group->flags;
 	}
 
@@ -701,12 +701,16 @@ minstrel_get_sample_rate(struct minstrel_priv *mp, struct minstrel_ht_sta *mi)
 	if (!mi->sample_tries)
 		return -1;
 
-	mg = &mi->groups[mi->sample_group];
-	sample_idx = sample_table[mg->column][mg->index];
-	mr = &mg->rates[sample_idx];
 	sample_group = mi->sample_group;
-	sample_idx += sample_group * MCS_GROUP_RATES;
+	mg = &mi->groups[sample_group];
+	sample_idx = sample_table[mg->column][mg->index];
 	minstrel_next_sample_idx(mi);
+
+	if (!(mg->supported & BIT(sample_idx)))
+		return -1;
+
+	mr = &mg->rates[sample_idx];
+	sample_idx += sample_group * MCS_GROUP_RATES;
 
 	/*
 	 * Sampling might add some overhead (RTS, no aggregation)
@@ -782,7 +786,7 @@ minstrel_ht_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 	info->flags |= mi->tx_flags;
 	minstrel_ht_check_cck_shortpreamble(mp, mi, txrc->short_preamble);
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	if (mp->fixed_rate_idx != -1)
 		return;
 #endif
@@ -817,7 +821,7 @@ minstrel_ht_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
 	}
 
 	rate->idx = sample_idx % MCS_GROUP_RATES +
-		    (sample_group->streams - 1) * MCS_GROUP_RATES;
+		    (sample_group->streams - 1) * 8;
 	rate->flags = IEEE80211_TX_RC_MCS | sample_group->flags;
 }
 
@@ -1027,7 +1031,7 @@ minstrel_ht_free(void *priv)
 	mac80211_minstrel.free(priv);
 }
 
-static struct rate_control_ops mac80211_minstrel_ht = {
+static const struct rate_control_ops mac80211_minstrel_ht = {
 	.name = "minstrel_ht",
 	.tx_status = minstrel_ht_tx_status,
 	.get_rate = minstrel_ht_get_rate,
@@ -1037,25 +1041,23 @@ static struct rate_control_ops mac80211_minstrel_ht = {
 	.free_sta = minstrel_ht_free_sta,
 	.alloc = minstrel_ht_alloc,
 	.free = minstrel_ht_free,
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	.add_sta_debugfs = minstrel_ht_add_sta_debugfs,
 	.remove_sta_debugfs = minstrel_ht_remove_sta_debugfs,
 #endif
 };
 
 
-static void
-init_sample_table(void)
+static void __init init_sample_table(void)
 {
 	int col, i, new_idx;
 	u8 rnd[MCS_GROUP_RATES];
 
 	memset(sample_table, 0xff, sizeof(sample_table));
 	for (col = 0; col < SAMPLE_COLUMNS; col++) {
+		prandom_bytes(rnd, sizeof(rnd));
 		for (i = 0; i < MCS_GROUP_RATES; i++) {
-			get_random_bytes(rnd, sizeof(rnd));
 			new_idx = (i + rnd[i]) % MCS_GROUP_RATES;
-
 			while (sample_table[col][new_idx] != 0xff)
 				new_idx = (new_idx + 1) % MCS_GROUP_RATES;
 

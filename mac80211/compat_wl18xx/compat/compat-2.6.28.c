@@ -5,12 +5,14 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.28.
+ * Backport functionality introduced in Linux 2.6.28.
  */
 
 #include <linux/compat.h>
 #include <linux/usb.h>
 #include <linux/tty.h>
+#include <linux/skbuff.h>
+#include <linux/pci.h>
 #include <asm/poll.h>
 
 /* 2.6.28 compat code goes here */
@@ -87,7 +89,8 @@ EXPORT_SYMBOL_GPL(usb_poison_urb);
 #endif /* CONFIG_USB */
 
 #if defined(CONFIG_PCMCIA) || defined(CONFIG_PCMCIA_MODULE)
-
+#include <pcmcia/cistpl.h>
+#include <pcmcia/cs_types.h>
 #include <pcmcia/ds.h>
 struct pcmcia_cfg_mem {
 	tuple_t tuple;
@@ -236,6 +239,7 @@ EXPORT_SYMBOL_GPL(usb_anchor_empty);
 #endif /* CONFIG_USB */
 #endif
 
+#ifdef CONFIG_PCI
 void __iomem *pci_ioremap_bar(struct pci_dev *pdev, int bar)
 {
 	/*
@@ -249,6 +253,7 @@ void __iomem *pci_ioremap_bar(struct pci_dev *pdev, int bar)
 				     pci_resource_len(pdev, bar));
 }
 EXPORT_SYMBOL_GPL(pci_ioremap_bar);
+#endif
 
 static unsigned long round_jiffies_common(unsigned long j, int cpu,
 		bool force_up)
@@ -313,6 +318,7 @@ void v2_6_28_skb_add_rx_frag(struct sk_buff *skb, int i, struct page *page, int 
 }
 EXPORT_SYMBOL_GPL(v2_6_28_skb_add_rx_frag);
 
+#ifdef CONFIG_TTY
 void tty_write_unlock(struct tty_struct *tty)
 {
 	mutex_unlock(&tty->atomic_write_lock);
@@ -438,7 +444,9 @@ int n_tty_ioctl_helper(struct tty_struct *tty, struct file *file,
 	}
 }
 EXPORT_SYMBOL_GPL(n_tty_ioctl_helper);
+#endif /* CONFIG_TTY */
 
+#ifdef CONFIG_PCI
 /**
  * pci_wake_from_d3 - enable/disable device to wake up from D3_hot or D3_cold
  * @dev: PCI device to prepare
@@ -460,4 +468,5 @@ int pci_wake_from_d3(struct pci_dev *dev, bool enable)
 			pci_enable_wake(dev, PCI_D3hot, enable);
 }
 EXPORT_SYMBOL_GPL(pci_wake_from_d3);
+#endif
 

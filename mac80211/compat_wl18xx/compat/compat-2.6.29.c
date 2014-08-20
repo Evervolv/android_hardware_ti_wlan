@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.29.
+ * Backport functionality introduced in Linux 2.6.29.
  */
 
 #include <linux/compat.h>
@@ -21,6 +21,9 @@
 void netdev_attach_ops(struct net_device *dev,
 		       const struct net_device_ops *ops)
 {
+	if (!ops)
+		return;
+
 	dev->open = ops->ndo_open;
 	dev->init = ops->ndo_init;
 	dev->stop = ops->ndo_stop;

@@ -21,7 +21,7 @@
 
 struct rate_control_ref {
 	struct ieee80211_local *local;
-	struct rate_control_ops *ops;
+	const struct rate_control_ops *ops;
 	void *priv;
 };
 
@@ -54,6 +54,8 @@ static inline void rate_control_rate_init(struct sta_info *sta)
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_chanctx_conf *chanctx_conf;
 
+	ieee80211_sta_set_rx_nss(sta);
+
 	if (!ref)
 		return;
 
@@ -66,8 +68,6 @@ static inline void rate_control_rate_init(struct sta_info *sta)
 	}
 
 	sband = local->hw.wiphy->bands[chanctx_conf->def.chan->band];
-
-	ieee80211_sta_set_rx_nss(sta);
 
 	ref->ops->rate_init(ref->priv, sband, &chanctx_conf->def, ista,
 			    priv_sta);
@@ -118,7 +118,7 @@ static inline void rate_control_free_sta(struct sta_info *sta)
 
 static inline void rate_control_add_sta_debugfs(struct sta_info *sta)
 {
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct rate_control_ref *ref = sta->rate_ctrl;
 	if (ref && sta->debugfs.dir && ref->ops->add_sta_debugfs)
 		ref->ops->add_sta_debugfs(ref->priv, sta->rate_ctrl_priv,
@@ -128,7 +128,7 @@ static inline void rate_control_add_sta_debugfs(struct sta_info *sta)
 
 static inline void rate_control_remove_sta_debugfs(struct sta_info *sta)
 {
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct rate_control_ref *ref = sta->rate_ctrl;
 	if (ref && ref->ops->remove_sta_debugfs)
 		ref->ops->remove_sta_debugfs(ref->priv, sta->rate_ctrl_priv);
@@ -143,9 +143,9 @@ void rate_control_deinitialize(struct ieee80211_local *local);
 
 
 /* Rate control algorithms */
-#ifdef CONFIG_MAC80211_RC_PID
-extern int rc80211_pid_init(void);
-extern void rc80211_pid_exit(void);
+#ifdef CPTCFG_MAC80211_RC_PID
+int rc80211_pid_init(void);
+void rc80211_pid_exit(void);
 #else
 static inline int rc80211_pid_init(void)
 {
@@ -156,9 +156,9 @@ static inline void rc80211_pid_exit(void)
 }
 #endif
 
-#ifdef CONFIG_MAC80211_RC_MINSTREL
-extern int rc80211_minstrel_init(void);
-extern void rc80211_minstrel_exit(void);
+#ifdef CPTCFG_MAC80211_RC_MINSTREL
+int rc80211_minstrel_init(void);
+void rc80211_minstrel_exit(void);
 #else
 static inline int rc80211_minstrel_init(void)
 {
@@ -169,9 +169,9 @@ static inline void rc80211_minstrel_exit(void)
 }
 #endif
 
-#ifdef CONFIG_MAC80211_RC_MINSTREL_HT
-extern int rc80211_minstrel_ht_init(void);
-extern void rc80211_minstrel_ht_exit(void);
+#ifdef CPTCFG_MAC80211_RC_MINSTREL_HT
+int rc80211_minstrel_ht_init(void);
+void rc80211_minstrel_ht_exit(void);
 #else
 static inline int rc80211_minstrel_ht_init(void)
 {

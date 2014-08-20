@@ -87,7 +87,7 @@ struct minstrel_sta_info {
 	/* sampling table */
 	u8 *sample_table;
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *dbg_stats;
 #endif
 };
@@ -105,7 +105,7 @@ struct minstrel_priv {
 
 	u8 cck_rates[4];
 
-#ifdef CONFIG_MAC80211_DEBUGFS
+#ifdef CPTCFG_MAC80211_DEBUGFS
 	/*
 	 * enable fixed rate processing per RC
 	 *   - write static index to debugfs:ieee80211/phyX/rc/fixed_rate_idx
@@ -123,7 +123,7 @@ struct minstrel_debugfs_info {
 	char buf[];
 };
 
-extern struct rate_control_ops mac80211_minstrel;
+extern const struct rate_control_ops mac80211_minstrel;
 void minstrel_add_sta_debugfs(void *priv, void *priv_sta, struct dentry *dir);
 void minstrel_remove_sta_debugfs(void *priv, void *priv_sta);
 

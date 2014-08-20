@@ -22,6 +22,8 @@
 
 #include "../wlcore/debugfs.h"
 #include "../wlcore/wlcore.h"
+#include "../wlcore/debug.h"
+#include "../wlcore/ps.h"
 
 #include "wl18xx.h"
 #include "acx.h"
@@ -269,6 +271,45 @@ static const struct file_operations clear_fw_stats_ops = {
 	.llseek = default_llseek,
 };
 
+static ssize_t radar_detection_write(struct file *file,
+			      const char __user *user_buf,
+			      size_t count, loff_t *ppos)
+{
+	struct wl1271 *wl = file->private_data;
+	int ret;
+	u8 channel;
+
+	ret = kstrtou8_from_user(user_buf, count, 10, &channel);
+	if (ret < 0) {
+		wl1271_warning("illegal channel");
+		return -EINVAL;
+	}
+
+	mutex_lock(&wl->mutex);
+
+	if (unlikely(wl->state != WLCORE_STATE_ON))
+		goto out;
+
+	ret = wl1271_ps_elp_wakeup(wl);
+	if (ret < 0)
+		goto out;
+
+	ret = wlcore_radar_detection_debug(wl, channel);
+	if (ret < 0)
+		count = ret;
+
+	wl1271_ps_elp_sleep(wl);
+out:
+	mutex_unlock(&wl->mutex);
+	return count;
+}
+
+static const struct file_operations radar_detection_ops = {
+	.write = radar_detection_write,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+
 int wl18xx_debugfs_add_files(struct wl1271 *wl,
 			     struct dentry *rootdir)
 {
@@ -448,6 +489,7 @@ int wl18xx_debugfs_add_files(struct wl1271 *wl,
 	DEBUGFS_FWSTATS_ADD(roaming, rssi_level);
 
 	DEBUGFS_ADD(conf, moddir);
+	DEBUGFS_ADD(radar_detection, moddir);
 
 	return 0;
 

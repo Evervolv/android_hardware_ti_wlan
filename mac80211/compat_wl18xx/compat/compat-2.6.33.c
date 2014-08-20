@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Compatibility file for Linux wireless for kernels 2.6.33.
+ * Backport functionality introduced in Linux 2.6.33.
  */
 
 #include <linux/compat.h>
@@ -13,6 +13,9 @@
 #include <linux/usb.h>
 #include <linux/pm_runtime.h>
 #include <linux/platform_device.h>
+#include <pcmcia/cs_types.h>
+#include <pcmcia/cistpl.h>
+#include <pcmcia/ds.h>
 
 #ifdef CONFIG_USB_SUSPEND
 /**

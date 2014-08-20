@@ -303,8 +303,9 @@
  *	passed, all channels allowed for the current regulatory domain
  *	are used.  Extra IEs can also be passed from the userspace by
  *	using the %NL80211_ATTR_IE attribute.
- * @NL80211_CMD_STOP_SCHED_SCAN: stop a scheduled scan.  Returns -ENOENT
- *	if scheduled scan is not running.
+ * @NL80211_CMD_STOP_SCHED_SCAN: stop a scheduled scan. Returns -ENOENT if
+ *	scheduled scan is not running. The caller may assume that as soon
+ *	as the call returns, it is safe to start a new scheduled scan again.
  * @NL80211_CMD_SCHED_SCAN_RESULTS: indicates that there are scheduled scan
  *	results available.
  * @NL80211_CMD_SCHED_SCAN_STOPPED: indicates that the scheduled scan has
@@ -418,8 +419,18 @@
  *	%NL80211_ATTR_SSID attribute, and can optionally specify the association
  *	IEs in %NL80211_ATTR_IE, %NL80211_ATTR_AUTH_TYPE, %NL80211_ATTR_USE_MFP,
  *	%NL80211_ATTR_MAC, %NL80211_ATTR_WIPHY_FREQ, %NL80211_ATTR_CONTROL_PORT,
- *	%NL80211_ATTR_CONTROL_PORT_ETHERTYPE and
- *	%NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT.
+ *	%NL80211_ATTR_CONTROL_PORT_ETHERTYPE,
+ *	%NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT, %NL80211_ATTR_MAC_HINT, and
+ *	%NL80211_ATTR_WIPHY_FREQ_HINT.
+ *	If included, %NL80211_ATTR_MAC and %NL80211_ATTR_WIPHY_FREQ are
+ *	restrictions on BSS selection, i.e., they effectively prevent roaming
+ *	within the ESS. %NL80211_ATTR_MAC_HINT and %NL80211_ATTR_WIPHY_FREQ_HINT
+ *	can be included to provide a recommendation of the initial BSS while
+ *	allowing the driver to roam to other BSSes within the ESS and also to
+ *	ignore this recommendation if the indicated BSS is not ideal. Only one
+ *	set of BSSID,frequency parameters is used (i.e., either the enforcing
+ *	%NL80211_ATTR_MAC,%NL80211_ATTR_WIPHY_FREQ or the less strict
+ *	%NL80211_ATTR_MAC_HINT and %NL80211_ATTR_WIPHY_FREQ_HINT).
  *	Background scan period can optionally be
  *	specified in %NL80211_ATTR_BG_SCAN_PERIOD,
  *	if not specified default background scan configuration
@@ -581,7 +592,14 @@
  *	operation, %NL80211_ATTR_MAC contains the peer MAC address, and
  *	%NL80211_ATTR_REASON_CODE the reason code to be used (only with
  *	%NL80211_TDLS_TEARDOWN).
- * @NL80211_CMD_TDLS_MGMT: Send a TDLS management frame.
+ * @NL80211_CMD_TDLS_MGMT: Send a TDLS management frame. The
+ *	%NL80211_ATTR_TDLS_ACTION attribute determines the type of frame to be
+ *	sent. Public Action codes (802.11-2012 8.1.5.1) will be sent as
+ *	802.11 management frames, while TDLS action codes (802.11-2012
+ *	8.5.13.1) will be encapsulated and sent as data frames. The currently
+ *	supported Public Action code is %WLAN_PUB_ACTION_TDLS_DISCOVER_RES
+ *	and the currently supported TDLS actions codes are given in
+ *	&enum ieee80211_tdls_actioncode.
  *
  * @NL80211_CMD_UNEXPECTED_FRAME: Used by an application controlling an AP
  *	(or GO) interface (i.e. hostapd) to ask for unexpected frames to
@@ -685,6 +703,21 @@
  *	width). %NL80211_ATTR_CH_SWITCH_BLOCK_TX may be supplied to inform
  *	other station that transmission must be blocked until the channel
  *	switch is complete.
+ *
+ * @NL80211_CMD_VENDOR: Vendor-specified command/event. The command is specified
+ *	by the %NL80211_ATTR_VENDOR_ID attribute and a sub-command in
+ *	%NL80211_ATTR_VENDOR_SUBCMD. Parameter(s) can be transported in
+ *	%NL80211_ATTR_VENDOR_DATA.
+ *	For feature advertisement, the %NL80211_ATTR_VENDOR_DATA attribute is
+ *	used in the wiphy data as a nested attribute containing descriptions
+ *	(&struct nl80211_vendor_cmd_info) of the supported vendor commands.
+ *	This may also be sent as an event with the same attributes.
+ *
+ * @NL80211_CMD_SET_QOS_MAP: Set Interworking QoS mapping for IP DSCP values.
+ *	The QoS mapping information is included in %NL80211_ATTR_QOS_MAP. If
+ *	that attribute is not included, QoS mapping is disabled. Since this
+ *	QoS mapping is relevant for IP packets, it is only valid during an
+ *	association. This is cleared on disassociation and AP restart.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -853,6 +886,10 @@ enum nl80211_commands {
 
 	NL80211_CMD_CHANNEL_SWITCH,
 
+	NL80211_CMD_VENDOR,
+
+	NL80211_CMD_SET_QOS_MAP,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -988,7 +1025,7 @@ enum nl80211_commands {
  * 	to query the CRDA to retrieve one regulatory domain. This attribute can
  * 	also be used by userspace to query the kernel for the currently set
  * 	regulatory domain. We chose an alpha2 as that is also used by the
- * 	IEEE-802.11d country information element to identify a country.
+ * 	IEEE-802.11 country information element to identify a country.
  * 	Users can also simply ask the wireless core to set regulatory domain
  * 	to a specific alpha2.
  * @NL80211_ATTR_REG_RULES: a nested array of regulatory domain regulatory
@@ -1513,6 +1550,52 @@ enum nl80211_commands {
  *	requests to transmit on each active scan channel, used with
  *	%NL80211_CMD_TRIGGER_SCAN command.
  *
+ * @NL80211_ATTR_STA_SUPPORTED_CHANNELS: array of supported channels.
+ *
+ * @NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES: array of supported
+ *      supported operating classes.
+ *
+ * @NL80211_ATTR_HANDLE_DFS: A flag indicating whether user space
+ *	controls DFS operation in IBSS mode. If the flag is included in
+ *	%NL80211_CMD_JOIN_IBSS request, the driver will allow use of DFS
+ *	channels and reports radar events to userspace. Userspace is required
+ *	to react to radar events, e.g. initiate a channel switch or leave the
+ *	IBSS network.
+ *
+ * @NL80211_ATTR_SUPPORT_5_MHZ: A flag indicating that the device supports
+ *	5 MHz channel bandwidth.
+ * @NL80211_ATTR_SUPPORT_10_MHZ: A flag indicating that the device supports
+ *	10 MHz channel bandwidth.
+ *
+ * @NL80211_ATTR_OPMODE_NOTIF: Operating mode field from Operating Mode
+ *	Notification Element based on association request when used with
+ *	%NL80211_CMD_NEW_STATION; u8 attribute.
+ *
+ * @NL80211_ATTR_VENDOR_ID: The vendor ID, either a 24-bit OUI or, if
+ *	%NL80211_VENDOR_ID_IS_LINUX is set, a special Linux ID (not used yet)
+ * @NL80211_ATTR_VENDOR_SUBCMD: vendor sub-command
+ * @NL80211_ATTR_VENDOR_DATA: data for the vendor command, if any; this
+ *	attribute is also used for vendor command feature advertisement
+ * @NL80211_ATTR_VENDOR_EVENTS: used for event list advertising in the wiphy
+ *	info, containing a nested array of possible events
+ *
+ * @NL80211_ATTR_QOS_MAP: IP DSCP mapping for Interworking QoS mapping. This
+ *	data is in the format defined for the payload of the QoS Map Set element
+ *	in IEEE Std 802.11-2012, 8.4.2.97.
+ *
+ * @NL80211_ATTR_MAC_HINT: MAC address recommendation as initial BSS
+ * @NL80211_ATTR_WIPHY_FREQ_HINT: frequency of the recommended initial BSS
+ *
+ * @NL80211_ATTR_MAX_AP_ASSOC_STA: Device attribute that indicates how many
+ *	associated stations are supported in AP mode (including P2P GO); u32.
+ *	Since drivers may not have a fixed limit on the maximum number (e.g.,
+ *	other concurrent operations may affect this), drivers are allowed to
+ *	advertise values that cannot always be met. In such cases, an attempt
+ *	to add a new station entry with @NL80211_CMD_NEW_STATION may fail.
+ *
+ * @NL80211_ATTR_TDLS_PEER_CAPABILITY: flags for TDLS peer capabilities, u32.
+ *	As specified in the &enum nl80211_tdls_peer_capability.
+ *
  * @NL80211_ATTR_SCHED_SCAN_SHORT_INTERVAL: interval between
  *      each short interval scheduled scan cycle in msecs.
  * @NL80211_ATTR_SCHED_SCAN_NUM_SHORT_INTERVALS: number of short
@@ -1828,7 +1911,33 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_RXMGMT_FLAGS,
 
-	NL80211_ATTR_SCAN_MIN_DWELL,
+	NL80211_ATTR_STA_SUPPORTED_CHANNELS,
+
+	NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES,
+
+	NL80211_ATTR_HANDLE_DFS,
+
+	NL80211_ATTR_SUPPORT_5_MHZ,
+	NL80211_ATTR_SUPPORT_10_MHZ,
+
+	NL80211_ATTR_OPMODE_NOTIF,
+
+	NL80211_ATTR_VENDOR_ID,
+	NL80211_ATTR_VENDOR_SUBCMD,
+	NL80211_ATTR_VENDOR_DATA,
+	NL80211_ATTR_VENDOR_EVENTS,
+
+	NL80211_ATTR_QOS_MAP,
+
+	NL80211_ATTR_MAC_HINT,
+	NL80211_ATTR_WIPHY_FREQ_HINT,
+
+	NL80211_ATTR_MAX_AP_ASSOC_STA,
+
+	NL80211_ATTR_TDLS_PEER_CAPABILITY,
+
+	/* leave some space for our custom attributes */
+	NL80211_ATTR_SCAN_MIN_DWELL = NL80211_ATTR_TDLS_PEER_CAPABILITY + 30,
 	NL80211_ATTR_SCAN_MAX_DWELL,
 	NL80211_ATTR_SCAN_NUM_PROBE,
 
@@ -2235,10 +2344,9 @@ enum nl80211_band_attr {
  * @NL80211_FREQUENCY_ATTR_FREQ: Frequency in MHz
  * @NL80211_FREQUENCY_ATTR_DISABLED: Channel is disabled in current
  *	regulatory domain.
- * @NL80211_FREQUENCY_ATTR_PASSIVE_SCAN: Only passive scanning is
- *	permitted on this channel in current regulatory domain.
- * @NL80211_FREQUENCY_ATTR_NO_IBSS: IBSS networks are not permitted
- *	on this channel in current regulatory domain.
+ * @NL80211_FREQUENCY_ATTR_NO_IR: no mechanisms that initiate radiation
+ * 	are permitted on this channel, this includes sending probe
+ * 	requests, or modes of operation that require beaconing.
  * @NL80211_FREQUENCY_ATTR_RADAR: Radar detection is mandatory
  *	on this channel in current regulatory domain.
  * @NL80211_FREQUENCY_ATTR_MAX_TX_POWER: Maximum transmission power in mBm
@@ -2257,6 +2365,7 @@ enum nl80211_band_attr {
  * @NL80211_FREQUENCY_ATTR_NO_160MHZ: any 160 MHz (but not 80+80) channel
  *	using this channel as the primary or any of the secondary channels
  *	isn't possible
+ * @NL80211_FREQUENCY_ATTR_DFS_CAC_TIME: DFS CAC time in milliseconds.
  * @NL80211_FREQUENCY_ATTR_MAX: highest frequency attribute number
  *	currently defined
  * @__NL80211_FREQUENCY_ATTR_AFTER_LAST: internal use
@@ -2265,8 +2374,8 @@ enum nl80211_frequency_attr {
 	__NL80211_FREQUENCY_ATTR_INVALID,
 	NL80211_FREQUENCY_ATTR_FREQ,
 	NL80211_FREQUENCY_ATTR_DISABLED,
-	NL80211_FREQUENCY_ATTR_PASSIVE_SCAN,
-	NL80211_FREQUENCY_ATTR_NO_IBSS,
+	NL80211_FREQUENCY_ATTR_NO_IR,
+	__NL80211_FREQUENCY_ATTR_NO_IBSS,
 	NL80211_FREQUENCY_ATTR_RADAR,
 	NL80211_FREQUENCY_ATTR_MAX_TX_POWER,
 	NL80211_FREQUENCY_ATTR_DFS_STATE,
@@ -2275,6 +2384,7 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_NO_HT40_PLUS,
 	NL80211_FREQUENCY_ATTR_NO_80MHZ,
 	NL80211_FREQUENCY_ATTR_NO_160MHZ,
+	NL80211_FREQUENCY_ATTR_DFS_CAC_TIME,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,
@@ -2282,6 +2392,9 @@ enum nl80211_frequency_attr {
 };
 
 #define NL80211_FREQUENCY_ATTR_MAX_TX_POWER NL80211_FREQUENCY_ATTR_MAX_TX_POWER
+#define NL80211_FREQUENCY_ATTR_PASSIVE_SCAN	NL80211_FREQUENCY_ATTR_NO_IR
+#define NL80211_FREQUENCY_ATTR_NO_IBSS		NL80211_FREQUENCY_ATTR_NO_IR
+#define NL80211_FREQUENCY_ATTR_NO_IR		NL80211_FREQUENCY_ATTR_NO_IR
 
 /**
  * enum nl80211_bitrate_attr - bitrate attributes
@@ -2362,12 +2475,14 @@ enum nl80211_reg_type {
  * 	in KHz. This is not a center a frequency but an actual regulatory
  * 	band edge.
  * @NL80211_ATTR_FREQ_RANGE_MAX_BW: maximum allowed bandwidth for this
- * 	frequency range, in KHz.
+ *	frequency range, in KHz.
  * @NL80211_ATTR_POWER_RULE_MAX_ANT_GAIN: the maximum allowed antenna gain
  * 	for a given frequency range. The value is in mBi (100 * dBi).
  * 	If you don't have one then don't send this.
  * @NL80211_ATTR_POWER_RULE_MAX_EIRP: the maximum allowed EIRP for
  * 	a given frequency range. The value is in mBm (100 * dBm).
+ * @NL80211_ATTR_DFS_CAC_TIME: DFS CAC time in milliseconds.
+ *	If not present or 0 default CAC time will be used.
  * @NL80211_REG_RULE_ATTR_MAX: highest regulatory rule attribute number
  *	currently defined
  * @__NL80211_REG_RULE_ATTR_AFTER_LAST: internal use
@@ -2383,6 +2498,8 @@ enum nl80211_reg_rule_attr {
 	NL80211_ATTR_POWER_RULE_MAX_ANT_GAIN,
 	NL80211_ATTR_POWER_RULE_MAX_EIRP,
 
+	NL80211_ATTR_DFS_CAC_TIME,
+
 	/* keep last */
 	__NL80211_REG_RULE_ATTR_AFTER_LAST,
 	NL80211_REG_RULE_ATTR_MAX = __NL80211_REG_RULE_ATTR_AFTER_LAST - 1
@@ -2392,9 +2509,15 @@ enum nl80211_reg_rule_attr {
  * enum nl80211_sched_scan_match_attr - scheduled scan match attributes
  * @__NL80211_SCHED_SCAN_MATCH_ATTR_INVALID: attribute number 0 is reserved
  * @NL80211_SCHED_SCAN_MATCH_ATTR_SSID: SSID to be used for matching,
- * only report BSS with matching SSID.
+ *	only report BSS with matching SSID.
  * @NL80211_SCHED_SCAN_MATCH_ATTR_RSSI: RSSI threshold (in dBm) for reporting a
- *	BSS in scan results. Filtering is turned off if not specified.
+ *	BSS in scan results. Filtering is turned off if not specified. Note that
+ *	if this attribute is in a match set of its own, then it is treated as
+ *	the default value for all matchsets with an SSID, rather than being a
+ *	matchset of its own without an RSSI filter. This is due to problems with
+ *	how this API was implemented in the past. Also, due to the same problem,
+ *	the only way to create a matchset with only an RSSI filter (with this
+ *	attribute) is if there's only a single matchset with the RSSI attribute.
  * @NL80211_SCHED_SCAN_MATCH_ATTR_MAX: highest scheduled scan filter
  *	attribute number currently defined
  * @__NL80211_SCHED_SCAN_MATCH_ATTR_AFTER_LAST: internal use
@@ -2424,8 +2547,12 @@ enum nl80211_sched_scan_match_attr {
  * @NL80211_RRF_DFS: DFS support is required to be used
  * @NL80211_RRF_PTP_ONLY: this is only for Point To Point links
  * @NL80211_RRF_PTMP_ONLY: this is only for Point To Multi Point links
- * @NL80211_RRF_PASSIVE_SCAN: passive scan is required
- * @NL80211_RRF_NO_IBSS: no IBSS is allowed
+ * @NL80211_RRF_NO_IR: no mechanisms that initiate radiation are allowed,
+ * 	this includes probe requests or modes of operation that require
+ * 	beaconing.
+ * @NL80211_RRF_AUTO_BW: maximum available bandwidth should be calculated
+ *	base on contiguous rules and wider channels will be allowed to cross
+ *	multiple contiguous/overlapping frequency ranges.
  */
 enum nl80211_reg_rule_flags {
 	NL80211_RRF_NO_OFDM		= 1<<0,
@@ -2435,9 +2562,17 @@ enum nl80211_reg_rule_flags {
 	NL80211_RRF_DFS			= 1<<4,
 	NL80211_RRF_PTP_ONLY		= 1<<5,
 	NL80211_RRF_PTMP_ONLY		= 1<<6,
-	NL80211_RRF_PASSIVE_SCAN	= 1<<7,
-	NL80211_RRF_NO_IBSS		= 1<<8,
+	NL80211_RRF_NO_IR		= 1<<7,
+	__NL80211_RRF_NO_IBSS		= 1<<8,
+	NL80211_RRF_AUTO_BW		= 1<<11,
 };
+
+#define NL80211_RRF_PASSIVE_SCAN	NL80211_RRF_NO_IR
+#define NL80211_RRF_NO_IBSS		NL80211_RRF_NO_IR
+#define NL80211_RRF_NO_IR		NL80211_RRF_NO_IR
+
+/* For backport compatibility with older userspace */
+#define NL80211_RRF_NO_IR_ALL		(NL80211_RRF_NO_IR | __NL80211_RRF_NO_IBSS)
 
 /**
  * enum nl80211_dfs_regions - regulatory DFS regions
@@ -3069,19 +3204,41 @@ enum nl80211_key_attributes {
  *	in an array of rates as defined in IEEE 802.11 7.3.2.2 (u8 values with
  *	1 = 500 kbps) but without the IE length restriction (at most
  *	%NL80211_MAX_SUPP_RATES in a single array).
- * @NL80211_TXRATE_MCS: HT (MCS) rates allowed for TX rate selection
+ * @NL80211_TXRATE_HT: HT (MCS) rates allowed for TX rate selection
  *	in an array of MCS numbers.
+ * @NL80211_TXRATE_VHT: VHT rates allowed for TX rate selection,
+ *	see &struct nl80211_txrate_vht
+ * @NL80211_TXRATE_GI: configure GI, see &enum nl80211_txrate_gi
  * @__NL80211_TXRATE_AFTER_LAST: internal
  * @NL80211_TXRATE_MAX: highest TX rate attribute
  */
 enum nl80211_tx_rate_attributes {
 	__NL80211_TXRATE_INVALID,
 	NL80211_TXRATE_LEGACY,
-	NL80211_TXRATE_MCS,
+	NL80211_TXRATE_HT,
+	NL80211_TXRATE_VHT,
+	NL80211_TXRATE_GI,
 
 	/* keep last */
 	__NL80211_TXRATE_AFTER_LAST,
 	NL80211_TXRATE_MAX = __NL80211_TXRATE_AFTER_LAST - 1
+};
+
+#define NL80211_TXRATE_MCS NL80211_TXRATE_HT
+#define NL80211_VHT_NSS_MAX		8
+
+/**
+ * struct nl80211_txrate_vht - VHT MCS/NSS txrate bitmap
+ * @mcs: MCS bitmap table for each NSS (array index 0 for 1 stream, etc.)
+ */
+struct nl80211_txrate_vht {
+	__u16 mcs[NL80211_VHT_NSS_MAX];
+};
+
+enum nl80211_txrate_gi {
+	NL80211_TXRATE_DEFAULT_GI,
+	NL80211_TXRATE_FORCE_SGI,
+	NL80211_TXRATE_FORCE_LGI,
 };
 
 /**
@@ -3729,11 +3886,6 @@ enum nl80211_ap_sme_features {
  * @NL80211_FEATURE_CELL_BASE_REG_HINTS: This driver has been tested
  *	to work properly to suppport receiving regulatory hints from
  *	cellular base stations.
- * @NL80211_FEATURE_P2P_DEVICE_NEEDS_CHANNEL: If this is set, an active
- *	P2P Device (%NL80211_IFTYPE_P2P_DEVICE) requires its own channel
- *	in the interface combinations, even when it's only used for scan
- *	and remain-on-channel. This could be due to, for example, the
- *	remain-on-channel implementation requiring a channel context.
  * @NL80211_FEATURE_SAE: This driver supports simultaneous authentication of
  *	equals (SAE) with user space SME (NL80211_CMD_AUTHENTICATE) in station
  *	mode
@@ -3775,7 +3927,7 @@ enum nl80211_feature_flags {
 	NL80211_FEATURE_HT_IBSS				= 1 << 1,
 	NL80211_FEATURE_INACTIVITY_TIMER		= 1 << 2,
 	NL80211_FEATURE_CELL_BASE_REG_HINTS		= 1 << 3,
-	NL80211_FEATURE_P2P_DEVICE_NEEDS_CHANNEL	= 1 << 4,
+	/* bit 4 is reserved - don't use */
 	NL80211_FEATURE_SAE				= 1 << 5,
 	NL80211_FEATURE_LOW_PRIORITY_SCAN		= 1 << 6,
 	NL80211_FEATURE_SCAN_FLUSH			= 1 << 7,
@@ -3890,13 +4042,12 @@ enum nl80211_radar_event {
  *
  * Channel states used by the DFS code.
  *
- * @IEEE80211_DFS_USABLE: The channel can be used, but channel availability
+ * @NL80211_DFS_USABLE: The channel can be used, but channel availability
  *	check (CAC) must be performed before using it for AP or IBSS.
- * @IEEE80211_DFS_UNAVAILABLE: A radar has been detected on this channel, it
+ * @NL80211_DFS_UNAVAILABLE: A radar has been detected on this channel, it
  *	is therefore marked as not available.
- * @IEEE80211_DFS_AVAILABLE: The channel has been CAC checked and is available.
+ * @NL80211_DFS_AVAILABLE: The channel has been CAC checked and is available.
  */
-
 enum nl80211_dfs_state {
 	NL80211_DFS_USABLE,
 	NL80211_DFS_UNAVAILABLE,
@@ -3945,6 +4096,42 @@ enum nl80211_crit_proto_id {
  */
 enum nl80211_rxmgmt_flags {
 	NL80211_RXMGMT_FLAG_ANSWERED = 1 << 0,
+};
+
+/*
+ * If this flag is unset, the lower 24 bits are an OUI, if set
+ * a Linux nl80211 vendor ID is used (no such IDs are allocated
+ * yet, so that's not valid so far)
+ */
+#define NL80211_VENDOR_ID_IS_LINUX	0x80000000
+
+/**
+ * struct nl80211_vendor_cmd_info - vendor command data
+ * @vendor_id: If the %NL80211_VENDOR_ID_IS_LINUX flag is clear, then the
+ *	value is a 24-bit OUI; if it is set then a separately allocated ID
+ *	may be used, but no such IDs are allocated yet. New IDs should be
+ *	added to this file when needed.
+ * @subcmd: sub-command ID for the command
+ */
+struct nl80211_vendor_cmd_info {
+	__u32 vendor_id;
+	__u32 subcmd;
+};
+
+/**
+ * enum nl80211_tdls_peer_capability - TDLS peer flags.
+ *
+ * Used by tdls_mgmt() to determine which conditional elements need
+ * to be added to TDLS Setup frames.
+ *
+ * @NL80211_TDLS_PEER_HT: TDLS peer is HT capable.
+ * @NL80211_TDLS_PEER_VHT: TDLS peer is VHT capable.
+ * @NL80211_TDLS_PEER_WMM: TDLS peer is WMM capable.
+ */
+enum nl80211_tdls_peer_capability {
+	NL80211_TDLS_PEER_HT = 1<<0,
+	NL80211_TDLS_PEER_VHT = 1<<1,
+	NL80211_TDLS_PEER_WMM = 1<<2,
 };
 
 #endif /* __LINUX_NL80211_H */

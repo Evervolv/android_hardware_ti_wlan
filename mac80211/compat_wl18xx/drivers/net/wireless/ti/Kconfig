@@ -1,4 +1,5 @@
 menuconfig WL_TI
+	depends on !BACKPORT_KERNEL_2_6_30
 	bool "TI Wireless LAN support"
 	---help---
 	  This section contains support for all the wireless drivers
@@ -13,12 +14,8 @@ source "drivers/net/wireless/ti/wl18xx/Kconfig"
 # keep last for automatic dependencies
 source "drivers/net/wireless/ti/wlcore/Kconfig"
 
-config WILINK_PLATFORM_DATA
-	bool "TI WiLink platform data"
-	depends on WLCORE_SDIO || WL1251_SDIO
-	default y
-	---help---
-	Small platform data bit needed to pass data to the sdio modules.
-
+config UNIFIED_WILINK_PLATFORM_DATA
+	bool "TI Wilink platform data (Unified)"
+	default y if WILINK_PLATFORM_DATA || WL12XX_PLATFORM_DATA
 
 endif # WL_TI

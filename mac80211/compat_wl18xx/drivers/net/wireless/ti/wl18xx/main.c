@@ -43,7 +43,6 @@
 #include "scan.h"
 #include "event.h"
 #include "debugfs.h"
-#include "version.h"
 
 #define WL18XX_RX_CHECKSUM_MASK      0x40
 
@@ -381,6 +380,7 @@ static struct wlcore_conf wl18xx_conf = {
 		.keep_alive_interval         = 55000,
 		.max_listen_interval         = 20,
 		.sta_sleep_auth              = WL1271_PSM_ILLEGAL,
+		.suspend_rx_ba_activity      = 0,
 	},
 	.itrim = {
 		.enable = false,
@@ -570,6 +570,12 @@ static struct wl18xx_priv_conf wl18xx_default_priv_conf = {
 		.high_power_val_2nd		= 0xff,
 		.tx_rf_margin			= 1,
 	},
+	.ap_sleep = {               /* disabled by default */
+		.idle_duty_cycle        = 0,
+		.connected_duty_cycle   = 0,
+		.max_stations_thresh    = 0,
+		.idle_conn_thresh       = 0,
+	},
 };
 
 static const struct wlcore_partition_set wl18xx_ptable[PART_TABLE_LEN] = {
@@ -651,7 +657,7 @@ static const struct wl18xx_clk_cfg wl18xx_clk_table[NUM_CLOCK_CONFIGS] = {
 };
 
 /* TODO: maybe move to a new header file? */
-#define WL18XX_FW_NAME "ti-connectivity/wl18xx-fw-2.bin"
+#define WL18XX_FW_NAME "ti-connectivity/wl18xx-fw-4.bin"
 
 static int wl18xx_identify_chip(struct wl1271 *wl)
 {
@@ -986,6 +992,7 @@ static int wl18xx_boot(struct wl1271 *wl)
 
 	wl->event_mask = BSS_LOSS_EVENT_ID |
 		SCAN_COMPLETE_EVENT_ID |
+		RADAR_DETECTED_EVENT_ID |
 		RSSI_SNR_TRIGGER_0_EVENT_ID |
 		PERIODIC_SCAN_COMPLETE_EVENT_ID |
 		PERIODIC_SCAN_REPORT_EVENT_ID |
@@ -1698,6 +1705,9 @@ static struct wlcore_ops wl18xx_ops = {
 	.smart_config_start = wl18xx_cmd_smart_config_start,
 	.smart_config_stop  = wl18xx_cmd_smart_config_stop,
 	.smart_config_set_group_key = wl18xx_cmd_smart_config_set_group_key,
+	.interrupt_notify = wl18xx_acx_interrupt_notify_config,
+	.rx_ba_filter	= wl18xx_acx_rx_ba_filter,
+	.ap_sleep	= wl18xx_acx_ap_sleep,
 };
 
 /* HT cap appropriate for wide channels in 2Ghz */
@@ -1785,12 +1795,20 @@ wl18xx_iface_combinations[] = {
 		.limits = wl18xx_iface_limits,
 		.n_limits = ARRAY_SIZE(wl18xx_iface_limits),
 		.num_different_channels = 2,
+		.radar_detect_widths =	BIT(NL80211_CHAN_NO_HT) |
+					BIT(NL80211_CHAN_HT20) |
+					BIT(NL80211_CHAN_HT40MINUS) |
+					BIT(NL80211_CHAN_HT40PLUS),
 	},
 	{
 		.max_interfaces = 2,
 		.limits = wl18xx_iface_ap_limits,
 		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_limits),
 		.num_different_channels = 1,
+		.radar_detect_widths =	BIT(NL80211_CHAN_NO_HT) |
+					BIT(NL80211_CHAN_HT20) |
+					BIT(NL80211_CHAN_HT40MINUS) |
+					BIT(NL80211_CHAN_HT40PLUS),
 	}
 };
 
@@ -1927,7 +1945,6 @@ static int wl18xx_setup(struct wl1271 *wl)
 	/* Enable 11a Band only if we have 5G antennas */
 	wl->enable_11a = (priv->conf.phy.number_of_assembled_ant5 != 0);
 
-	wl1271_info("wl18xx driver version: %s", wl18xx_git_head);
 	return 0;
 }
 

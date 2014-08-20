@@ -51,19 +51,24 @@ enum {
 struct wl12xx_platform_data {
 	void (*set_power)(bool enable);
 	/* SDIO only: IRQ number if WLAN_IRQ line is used, 0 for SDIO IRQs */
-	int gpio;
 	int irq;
 	bool use_eeprom;
 	int board_ref_clock;
 	int board_tcxo_clock;
 	u32 platform_quirks;
 	bool pwr_in_suspend;
+
+	/*
+	 * Note: this might not exist in older kernels.
+	 * avoid reading/writing it if not sure.
+	 */
+	int gpio;
 };
 
 /* Platform does not support level trigger interrupts */
 #define WL12XX_PLATFORM_QUIRK_EDGE_IRQ	BIT(0)
 
-#ifdef CONFIG_WILINK_PLATFORM_DATA
+#ifdef CPTCFG_UNIFIED_WILINK_PLATFORM_DATA
 
 int wl12xx_set_platform_data(const struct wl12xx_platform_data *data);
 

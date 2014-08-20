@@ -102,8 +102,35 @@ static const struct file_operations ht40allow_map_ops = {
 	.llseek = default_llseek,
 };
 
+static ssize_t dfs_reset_write(struct file *file,
+			       const char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct wiphy *wiphy = file->private_data;
+	unsigned long value;
+	int ret;
+
+	ret = kstrtoul_from_user(user_buf, count, 10, &value);
+	if (ret < 0)
+		return -EINVAL;
+
+	rtnl_lock();
+	cfg80211_reset_dfs_channels(wiphy, value);
+	rtnl_unlock();
+	return count;
+}
+
+static const struct file_operations dfs_reset_ops = {
+	.write = dfs_reset_write,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+
 #define DEBUGFS_ADD(name)						\
 	debugfs_create_file(#name, S_IRUGO, phyd, &rdev->wiphy, &name## _ops);
+
+#define DEBUGFS_ADD_WRITE(name)						\
+	debugfs_create_file(#name, S_IWUGO, phyd, &rdev->wiphy, &name## _ops);
 
 void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 {
@@ -114,4 +141,5 @@ void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 	DEBUGFS_ADD(short_retry_limit);
 	DEBUGFS_ADD(long_retry_limit);
 	DEBUGFS_ADD(ht40allow_map);
+	DEBUGFS_ADD_WRITE(dfs_reset);
 }

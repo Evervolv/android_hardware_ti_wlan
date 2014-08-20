@@ -1,23 +1,6 @@
-config WIRELESS_EXT
-	bool
-
-config WEXT_CORE
-	def_bool y
-	depends on CFG80211_WEXT || WIRELESS_EXT
-
-config WEXT_PROC
-	def_bool y
-	depends on PROC_FS
-	depends on WEXT_CORE
-
-config WEXT_SPY
-	bool
-
-config WEXT_PRIV
-	bool
-
 config CFG80211
 	tristate "cfg80211 - wireless configuration API"
+	depends on m
 	depends on RFKILL || !RFKILL
 	---help---
 	  cfg80211 is the Linux wireless LAN (802.11) configuration API.
@@ -134,13 +117,14 @@ config CFG80211_INTERNAL_REGDB
 config CFG80211_WEXT
 	bool "cfg80211 wireless extensions compatibility"
 	depends on CFG80211
-	select WEXT_CORE
+	depends on WEXT_CORE
 	help
 	  Enable this option if you need old userspace for wireless
 	  extensions with cfg80211-based drivers.
 
 config LIB80211
 	tristate
+	depends on m
 	default n
 	help
 	  This options enables a library of common routines used
@@ -150,12 +134,15 @@ config LIB80211
 
 config LIB80211_CRYPT_WEP
 	tristate
+	depends on m
 
 config LIB80211_CRYPT_CCMP
 	tristate
+	depends on m
 
 config LIB80211_CRYPT_TKIP
 	tristate
+	depends on m
 
 config LIB80211_DEBUG
 	bool "lib80211 debugging messages"

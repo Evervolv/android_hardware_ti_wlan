@@ -106,7 +106,11 @@ static ssize_t wl1271_sysfs_show_hw_pg_ver(struct device *dev,
 static DEVICE_ATTR(hw_pg_ver, S_IRUGO,
 		   wl1271_sysfs_show_hw_pg_ver, NULL);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static ssize_t wl1271_sysfs_read_fwlog(struct file *filp, struct kobject *kobj,
+#else
+static ssize_t wl1271_sysfs_read_fwlog(struct kobject *kobj,
+#endif
 				       struct bin_attribute *bin_attr,
 				       char *buffer, loff_t pos, size_t count)
 {
