@@ -35,6 +35,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/printk.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
 
 #include "wlcore.h"
 #include "wl12xx_80211.h"
@@ -215,6 +216,49 @@ static struct wl1271_if_operations sdio_ops = {
 	.set_block_size = wl1271_sdio_set_block_size,
 };
 
+#ifdef CONFIG_OF
+/* backport dt parsing function from upstream */
+static struct wl12xx_platform_data *wlcore_probe_of(struct device *dev)
+{
+	struct device_node *np = dev->of_node;
+	struct wl12xx_platform_data *pdata;
+	bool need_put_node = false;
+
+	if (!np || !of_device_is_compatible(np, "ti,wlcore")) {
+		np = of_find_compatible_node(NULL, NULL, "ti,wlcore");
+		if (!np) {
+			dev_err(dev, "No platform data set\n");
+			return NULL;
+		}
+		need_put_node = true;
+	}
+
+	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		dev_err(dev, "Can't allocate platform data\n");
+		goto err;
+	}
+
+	pdata->irq = irq_of_parse_and_map(np, 0);
+	if (!pdata->irq) {
+		dev_err(dev, "No irq in platform data\n");
+		goto err;
+	}
+
+	/* Optional fields */
+	of_property_read_u32(np, "board-ref-clock", &pdata->board_ref_clock);
+	of_property_read_u32(np, "board-tcxo-clock", &pdata->board_tcxo_clock);
+	of_property_read_u32(np, "platform-quirks", &pdata->platform_quirks);
+
+	return pdata;
+err:
+	if (need_put_node)
+		of_node_put(np);
+	kfree(pdata);
+	return NULL;
+}
+#endif
+
 static const struct of_device_id wlcore_of_match[] = {
 	{
 		.compatible = "wlcore",
@@ -233,6 +277,12 @@ static struct wl12xx_platform_data *get_platform_data(struct device *dev)
 		return kmemdup(pdata, sizeof(*pdata), GFP_KERNEL);
 
 #ifdef CONFIG_OF
+	/* first, try looking for "upstream" dt */
+	pdata = wlcore_probe_of(dev);
+	if (pdata)
+		return pdata;
+
+	/* if not found, look for our deprecated dt */
 	np = of_find_matching_node(NULL, wlcore_of_match);
 	if (!np) {
 		dev_err(dev, "No platform data set\n");
@@ -408,8 +458,16 @@ static int wl1271_suspend(struct device *dev)
 	dev_dbg(dev, "wl1271 suspend. wow_enabled: %d\n",
 		wl->wow_enabled);
 
-	/* check whether sdio should keep power */
-	if (wl->wow_enabled) {
+	/*
+	 * check whether sdio should keep power.
+	 * due to some mmc layer issues, the system automatically
+	 * powers us up on resume, which later cause issues when
+	 * we try to restore_power again explicitly.
+	 * workaround it by always asking to keep power. this is
+	 * fine as the driver controls the chip power anyway.
+	 * TODO: remove it when mmc issue is fixed.
+	 */
+	if (true || wl->wow_enabled) {
 		sdio_flags = sdio_get_host_pm_caps(func);
 
 		if (!(sdio_flags & MMC_PM_KEEP_POWER)) {
