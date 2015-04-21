@@ -27,6 +27,7 @@
 #include <linux/vmalloc.h>
 #include <linux/wl12xx.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 
 #include "wlcore.h"
 #include "debug.h"
@@ -6032,10 +6033,6 @@ static int wl12xx_get_hw_info(struct wl1271 *wl)
 {
 	int ret;
 
-	ret = wl12xx_set_power_on(wl);
-	if (ret < 0)
-		return ret;
-
 	ret = wlcore_read_reg(wl, REG_CHIP_ID_B, &wl->chip.id);
 	if (ret < 0)
 		goto out;
@@ -6051,7 +6048,6 @@ static int wl12xx_get_hw_info(struct wl1271 *wl)
 		ret = wl->ops->get_mac(wl);
 
 out:
-	wl1271_power_off(wl);
 	return ret;
 }
 
@@ -6477,15 +6473,68 @@ static irqreturn_t wlcore_hardirq(int irq, void *cookie)
 	return IRQ_WAKE_THREAD;
 }
 
+static int wl12xx_interrupt_config(struct wl1271 *wl)
+{
+	struct platform_device *pdev = wl->pdev;
+	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&pdev->dev);
+	struct wl12xx_platform_data *pdata = pdev_data->pdata;
+	unsigned long irqflags;
+	irq_handler_t hardirq_fn = NULL;
+	int ret;
+
+	wl->irq = platform_get_irq(pdev, 0);
+	wl->platform_quirks = pdata->platform_quirks;
+
+	switch (irq_get_trigger_type(wl->irq)) {
+	case IRQ_TYPE_LEVEL_LOW:
+		irqflags = IRQF_TRIGGER_LOW | IRQF_ONESHOT;
+		break;
+	case IRQ_TYPE_LEVEL_HIGH:
+		irqflags = IRQF_TRIGGER_HIGH | IRQF_ONESHOT;
+		break;
+	case IRQ_TYPE_EDGE_RISING:
+		irqflags = IRQF_TRIGGER_RISING;
+		hardirq_fn = wlcore_hardirq;
+		wl->platform_quirks |= WL12XX_PLATFORM_QUIRK_EDGE_IRQ;
+		break;
+	case IRQ_TYPE_EDGE_FALLING:
+		irqflags = IRQF_TRIGGER_FALLING;
+		hardirq_fn = wlcore_hardirq;
+		wl->platform_quirks |= WL12XX_PLATFORM_QUIRK_EDGE_IRQ;
+		break;
+	default:
+		wl1271_error("invalid interrupt trigger type");
+		return -EOPNOTSUPP;
+	}
+
+	ret = request_threaded_irq(wl->irq, hardirq_fn, wlcore_irq,
+				   irqflags, pdev->name, wl);
+	if (ret < 0) {
+		wl1271_error("request_irq() failed: %d", ret);
+		goto out;
+	}
+
+#ifdef CONFIG_PM
+	ret = enable_irq_wake(wl->irq);
+	if (!ret) {
+		wl->irq_wake_enabled = true;
+		device_init_wakeup(wl->dev, 1);
+		if (pdata->pwr_in_suspend)
+			wl->hw->wiphy->wowlan = &wlcore_wowlan_support;
+	}
+#endif
+	disable_irq(wl->irq);
+
+out:
+	return ret;
+}
+
 static void wlcore_nvs_cb(const struct firmware *fw, void *context)
 {
 	struct wl1271 *wl = context;
 	struct platform_device *pdev = wl->pdev;
 	struct wlcore_platdev_data *pdev_data = dev_get_platdata(&pdev->dev);
-	struct wl12xx_platform_data *pdata = pdev_data->pdata;
-	unsigned long irqflags;
 	int ret;
-	irq_handler_t hardirq_fn = NULL;
 
 	if (fw) {
 		wl->nvs = kmemdup(fw->data, fw->size, GFP_KERNEL);
@@ -6510,52 +6559,27 @@ static void wlcore_nvs_cb(const struct firmware *fw, void *context)
 	/* adjust some runtime configuration parameters */
 	wlcore_adjust_conf(wl);
 
-	wl->irq = platform_get_irq(pdev, 0);
-	wl->platform_quirks = pdata->platform_quirks;
 	wl->if_ops = pdev_data->if_ops;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,32)
-	irqflags = IRQF_TRIGGER_RISING;
-	hardirq_fn = wlcore_hardirq;
-#else
-	if (wl->platform_quirks & WL12XX_PLATFORM_QUIRK_EDGE_IRQ) {
-		irqflags = IRQF_TRIGGER_RISING;
-		hardirq_fn = wlcore_hardirq;
-	} else {
-		irqflags = IRQF_TRIGGER_HIGH | IRQF_ONESHOT;
-	}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,31)
-	ret = compat_request_threaded_irq(&wl->irq_compat, wl->irq,
-					  hardirq_fn, wlcore_irq,
-					  irqflags,
-					  pdev->name, wl);
-#else
-	ret = request_threaded_irq(wl->irq, hardirq_fn, wlcore_irq,
-				   irqflags, pdev->name, wl);
-#endif
-	if (ret < 0) {
-		wl1271_error("request_irq() failed: %d", ret);
+	ret = wl12xx_set_power_on(wl);
+	if (ret < 0)
 		goto out_free_nvs;
-	}
-
-#ifdef CONFIG_PM
-	ret = enable_irq_wake(wl->irq);
-	if (!ret) {
-		wl->irq_wake_enabled = true;
-		device_init_wakeup(wl->dev, 1);
-		if (pdata->pwr_in_suspend)
-			wl->hw->wiphy->wowlan = &wlcore_wowlan_support;
-	}
-#endif
-	disable_irq(wl->irq);
 
 	ret = wl12xx_get_hw_info(wl);
 	if (ret < 0) {
 		wl1271_error("couldn't get hw info");
-		goto out_irq;
+		wl1271_power_off(wl);
+		goto out_free_nvs;
 	}
+
+	ret = wl12xx_interrupt_config(wl);
+	if (ret < 0) {
+		wl1271_error("interrupt configuration failed");
+		wl1271_power_off(wl);
+		goto out_free_nvs;
+	}
+
+	wl1271_power_off(wl);
 
 	ret = wl->ops->identify_chip(wl);
 	if (ret < 0)
