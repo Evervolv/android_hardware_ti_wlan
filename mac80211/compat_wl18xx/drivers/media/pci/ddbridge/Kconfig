@@ -1,5 +1,4 @@
 config DVB_DDBRIDGE
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Digital Devices bridge support"
 	depends on m
 	depends on DVB_CORE && PCI && I2C

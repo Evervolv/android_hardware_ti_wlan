@@ -21,10 +21,8 @@
 */
 
 #include <linux/export.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
-#endif
 #include <linux/types.h>
 #include <linux/errno.h>
 #include <linux/kernel.h>
@@ -255,8 +253,6 @@ static void cmtp_recv_interopmsg(struct cmtp_session *session, struct sk_buff *s
 			if (skb->len < CAPI_MSG_BASELEN + 15)
 				break;
 
-			controller = CAPIMSG_U32(skb->data, CAPI_MSG_BASELEN + 10);
-
 			if (!info && ctrl) {
 				int len = min_t(uint, CAPI_MANUFACTURER_LEN,
 						skb->data[CAPI_MSG_BASELEN + 14]);
@@ -272,8 +268,6 @@ static void cmtp_recv_interopmsg(struct cmtp_session *session, struct sk_buff *s
 			if (skb->len < CAPI_MSG_BASELEN + 32)
 				break;
 
-			controller = CAPIMSG_U32(skb->data, CAPI_MSG_BASELEN + 12);
-
 			if (!info && ctrl) {
 				ctrl->version.majorversion = CAPIMSG_U32(skb->data, CAPI_MSG_BASELEN + 16);
 				ctrl->version.minorversion = CAPIMSG_U32(skb->data, CAPI_MSG_BASELEN + 20);
@@ -286,8 +280,6 @@ static void cmtp_recv_interopmsg(struct cmtp_session *session, struct sk_buff *s
 		case CAPI_FUNCTION_GET_SERIAL_NUMBER:
 			if (skb->len < CAPI_MSG_BASELEN + 17)
 				break;
-
-			controller = CAPIMSG_U32(skb->data, CAPI_MSG_BASELEN + 12);
 
 			if (!info && ctrl) {
 				int len = min_t(uint, CAPI_SERIAL_LEN,
@@ -341,7 +333,7 @@ void cmtp_recv_capimsg(struct cmtp_session *session, struct sk_buff *skb)
 		return;
 	}
 
-	if (session->flags & (1 << CMTP_LOOPBACK)) {
+	if (session->flags & BIT(CMTP_LOOPBACK)) {
 		kfree_skb(skb);
 		return;
 	}
@@ -364,12 +356,6 @@ void cmtp_recv_capimsg(struct cmtp_session *session, struct sk_buff *skb)
 		CAPIMSG_SETCONTROL(skb->data, contr);
 	}
 
-	if (!ctrl) {
-		BT_ERR("Can't find controller %d for message", session->num);
-		kfree_skb(skb);
-		return;
-	}
-
 	capi_ctr_handle_message(ctrl, appl, skb);
 }
 
@@ -386,11 +372,7 @@ static void cmtp_reset_ctr(struct capi_ctr *ctrl)
 
 	BT_DBG("ctrl %p", ctrl);
 
-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2,6,30))
 	capi_ctr_down(ctrl);
-#else
-	capi_ctr_reseted(ctrl);
-#endif
 
 	atomic_inc(&session->terminate);
 	wake_up_process(session->task);
@@ -524,7 +506,6 @@ static char *cmtp_procinfo(struct capi_ctr *ctrl)
 	return "CAPI Message Transport Protocol";
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 static int cmtp_proc_show(struct seq_file *m, void *v)
 {
 	struct capi_ctr *ctrl = m->private;
@@ -556,36 +537,6 @@ static const struct file_operations cmtp_proc_fops = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
-
-#else
-
-static int cmtp_ctr_read_proc(char *page, char **start, off_t off, int count, int *eof, struct capi_ctr *ctrl)
-{
-	struct cmtp_session *session = ctrl->driverdata;
-	struct cmtp_application *app;
-	struct list_head *p, *n;
-	int len = 0;
-
-	len += sprintf(page + len, "%s\n\n", cmtp_procinfo(ctrl));
-	len += sprintf(page + len, "addr %s\n", session->name);
-	len += sprintf(page + len, "ctrl %d\n", session->num);
-
-	list_for_each_safe(p, n, &session->applications) {
-		app = list_entry(p, struct cmtp_application, list);
-		len += sprintf(page + len, "appl %d -> %d\n", app->appl, app->mapping);
-	}
-
-	if (off + count >= len)
-		*eof = 1;
-
-	if (len < off)
-		return 0;
-
-	*start = page + off;
-
-	return ((count < len - off) ? count : len - off);
-}
-#endif
 
 int cmtp_attach_device(struct cmtp_session *session)
 {
@@ -625,11 +576,7 @@ int cmtp_attach_device(struct cmtp_session *session)
 	session->ctrl.send_message  = cmtp_send_message;
 
 	session->ctrl.procinfo      = cmtp_procinfo;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
 	session->ctrl.proc_fops = &cmtp_proc_fops;
-#else
-	session->ctrl.ctr_read_proc = cmtp_ctr_read_proc;
-#endif
 
 	if (attach_capi_ctr(&session->ctrl) < 0) {
 		BT_ERR("Can't attach new controller");

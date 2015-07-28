@@ -128,10 +128,11 @@ config SSB_PCICORE_HOSTMODE
 	  PCIcore hostmode operation (external PCI bus).
 
 config SSB_DRIVER_MIPS
-	depends on !BACKPORT_KERNEL_3_3
+	depends on !KERNEL_3_3
 	bool "SSB Broadcom MIPS core driver"
 	depends on SSB && MIPS
 	select SSB_SERIAL
+	select SSB_SFLASH
 	help
 	  Driver for the Sonics Silicon Backplane attached
 	  Broadcom MIPS core.
@@ -168,7 +169,6 @@ config SSB_DRIVER_GIGE
 	  If unsure, say N
 
 config SSB_DRIVER_GPIO
-	depends on !BACKPORT_KERNEL_2_6_28
 	bool "SSB GPIO driver"
 	depends on SSB && GPIOLIB
 	select IRQ_DOMAIN if SSB_EMBEDDED

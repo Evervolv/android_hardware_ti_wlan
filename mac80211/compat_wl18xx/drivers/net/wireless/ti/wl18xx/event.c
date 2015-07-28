@@ -20,11 +20,13 @@
  */
 
 #include <net/genetlink.h>
+#include <linux/hrtimer.h>
+#include <linux/ktime.h>
 #include "event.h"
 #include "scan.h"
 #include "../wlcore/cmd.h"
 #include "../wlcore/debug.h"
-#include "../wlcore/testmode.h"
+#include "../wlcore/vendor_cmd.h"
 
 int wl18xx_wait_for_event(struct wl1271 *wl, enum wlcore_wait_event event,
 			  bool *timeout)
@@ -47,7 +49,19 @@ int wl18xx_wait_for_event(struct wl1271 *wl, enum wlcore_wait_event event,
 	return wlcore_cmd_wait_for_event_or_timeout(wl, local_event, timeout);
 }
 
-#ifdef CPTCFG_NL80211_TESTMODE
+static const char *wl18xx_radar_type_decode(u8 radar_type)
+{
+	switch (radar_type) {
+	case RADAR_TYPE_REGULAR:
+		return "REGULAR";
+	case RADAR_TYPE_CHIRP:
+		return "CHIRP";
+	case RADAR_TYPE_NONE:
+	default:
+		return "N/A";
+	}
+}
+
 static int wlcore_smart_config_sync_event(struct wl1271 *wl, u8 sync_channel,
 					  u8 sync_band)
 {
@@ -65,15 +79,15 @@ static int wlcore_smart_config_sync_event(struct wl1271 *wl, u8 sync_channel,
 	wl1271_debug(DEBUG_EVENT,
 		     "SMART_CONFIG_SYNC_EVENT_ID, freq: %d (chan: %d band %d)",
 		     freq, sync_channel, sync_band);
-	skb = cfg80211_testmode_alloc_event_skb(wl->hw->wiphy, 20, GFP_KERNEL);
+	skb = cfg80211_vendor_event_alloc(wl->hw->wiphy, NULL, 20,
+					  WLCORE_VENDOR_EVENT_SC_SYNC,
+					  GFP_KERNEL);
 
-	if (nla_put_u8(skb, WL1271_TM_ATTR_SMART_CONFIG_EVENT,
-		       WLCORE_TM_SC_EVENT_SYNC) ||
-	    nla_put_u32(skb, WL1271_TM_ATTR_FREQ, freq)) {
+	if (nla_put_u32(skb, WLCORE_VENDOR_ATTR_FREQ, freq)) {
 		kfree_skb(skb);
 		return -EMSGSIZE;
 	}
-	cfg80211_testmode_event(skb, GFP_KERNEL);
+	cfg80211_vendor_event(skb, GFP_KERNEL);
 	return 0;
 }
 
@@ -85,37 +99,65 @@ static int wlcore_smart_config_decode_event(struct wl1271 *wl,
 
 	wl1271_debug(DEBUG_EVENT, "SMART_CONFIG_DECODE_EVENT_ID");
 	wl1271_dump_ascii(DEBUG_EVENT, "SSID:", ssid, ssid_len);
-	wl1271_dump_ascii(DEBUG_EVENT, "PWD:",pwd, pwd_len);
 
-	skb = cfg80211_testmode_alloc_event_skb(wl->hw->wiphy,
-			ssid_len + pwd_len + 20, GFP_KERNEL);
+	skb = cfg80211_vendor_event_alloc(wl->hw->wiphy, NULL,
+					  ssid_len + pwd_len + 20,
+					  WLCORE_VENDOR_EVENT_SC_DECODE,
+					  GFP_KERNEL);
 
-	if (nla_put_u8(skb, WL1271_TM_ATTR_SMART_CONFIG_EVENT,
-		       WLCORE_TM_SC_EVENT_DECODE) ||
-	    nla_put(skb, WL1271_TM_ATTR_SSID, ssid_len, ssid) ||
-	    nla_put(skb, WL1271_TM_ATTR_PSK, pwd_len, pwd)) {
+	if (nla_put(skb, WLCORE_VENDOR_ATTR_SSID, ssid_len, ssid) ||
+	    nla_put(skb, WLCORE_VENDOR_ATTR_PSK, pwd_len, pwd)) {
 		kfree_skb(skb);
 		return -EMSGSIZE;
 	}
-	cfg80211_testmode_event(skb, GFP_KERNEL);
+	cfg80211_vendor_event(skb, GFP_KERNEL);
 	return 0;
 }
-#else
-static int wlcore_smart_config_sync_event(struct wl1271 *wl, u8 sync_channel,
-					  u8 sync_band)
-{
-	wl1271_error("got SMART_CONFIG event, but CPTCFG_NL80211_TESTMODE is not configured!");
-	return -EINVAL;
-}
 
-static int wlcore_smart_config_decode_event(struct wl1271 *wl,
-					    u8 ssid_len, u8 *ssid,
-					    u8 pwd_len, u8 *pwd)
+static void wlcore_event_time_sync(struct wl1271 *wl, u16 tsf_msb, u16 tsf_lsb)
 {
-	wl1271_error("got SMART_CONFIG event, but CPTCFG_NL80211_TESTMODE is not configured!");
-	return -EINVAL;
+	ktime_t ktime;
+	u32 clock;
+	u32 interval_usc;
+	u32 mod_usc;
+	u32 next_tick_usc, ap_delta;
+
+    /* convert the MSB+LSB to a u32 TSF value */
+    clock = (tsf_msb << 16) | tsf_lsb;
+
+    wl1271_info("TIME_SYNC_EVENT_ID+: clock %u", clock);
+
+	/* Calculate the next tick */
+	interval_usc = wl->time_sync.interval_ms * USEC_PER_MSEC;
+	mod_usc  = clock % interval_usc;
+	next_tick_usc  = interval_usc -  mod_usc;
+
+	ap_delta = 0;
+	/* We have an AP running, fix the delta (reduce target in 25 usec) */
+	if (wl->ap_count > 0)
+	{
+	    //Fix the jitter by a fixed value in ap mode.
+	    next_tick_usc = next_tick_usc - 25;
+	}
+
+
+	/* skip the current interval if it's too close in time */
+	if (next_tick_usc < 5000)
+		next_tick_usc = next_tick_usc + interval_usc;
+
+	/* schedule hr timer 200ns before the desired time */
+	ktime = ktime_add_ns(wl->time_sync.gpio_ktime,
+			     NSEC_PER_USEC * (next_tick_usc - 200));
+
+	/* save the actual target time for the next wake-up */
+	wl->time_sync.target_ktime =
+		ktime_add_ns(wl->time_sync.gpio_ktime,
+			     NSEC_PER_USEC * (next_tick_usc));
+
+	/* set the timer */
+	hrtimer_start(&wl->time_sync.timer, ktime, HRTIMER_MODE_ABS);
+
 }
-#endif
 
 int wl18xx_process_mailbox_events(struct wl1271 *wl)
 {
@@ -133,12 +175,18 @@ int wl18xx_process_mailbox_events(struct wl1271 *wl)
 			wl18xx_scan_completed(wl, wl->scan_wlvif);
 	}
 
-	if (vector & RADAR_DETECTED_EVENT_ID) {
-		wl1271_debug(DEBUG_EVENT, "radar event: channel %d",
-			     mbox->radar_channel);
+	if (vector & TIME_SYNC_EVENT_ID)
+		wlcore_event_time_sync(wl,
+		        mbox->time_sync_tsf_msb,
+		        mbox->time_sync_tsf_lsb);
 
-		printk("radar channel: %d\n", mbox->radar_channel);
-		ieee80211_radar_detected(wl->hw);
+	if (vector & RADAR_DETECTED_EVENT_ID) {
+		wl1271_info("radar event: channel %d type %s",
+			    mbox->radar_channel,
+			    wl18xx_radar_type_decode(mbox->radar_type));
+
+		if (!wl->radar_debug_mode)
+			ieee80211_radar_detected(wl->hw);
 	}
 
 	if (vector & PERIODIC_SCAN_REPORT_EVENT_ID) {
@@ -186,6 +234,17 @@ int wl18xx_process_mailbox_events(struct wl1271 *wl)
 
 	if (vector & REMAIN_ON_CHANNEL_COMPLETE_EVENT_ID)
 		wlcore_event_roc_complete(wl);
+
+	if (vector & SMART_CONFIG_SYNC_EVENT_ID)
+		wlcore_smart_config_sync_event(wl, mbox->sc_sync_channel,
+					       mbox->sc_sync_band);
+
+	if (vector & SMART_CONFIG_DECODE_EVENT_ID)
+		wlcore_smart_config_decode_event(wl,
+						 mbox->sc_ssid_len,
+						 mbox->sc_ssid,
+						 mbox->sc_pwd_len,
+						 mbox->sc_pwd);
 
 	if (vector & RX_BA_WIN_SIZE_CHANGE_EVENT_ID) {
 		struct wl12xx_vif *wlvif;
@@ -245,17 +304,6 @@ int wl18xx_process_mailbox_events(struct wl1271 *wl)
 				wl->links[link_id].addr),
 			win_size);
 	}
-
-	if (vector & SMART_CONFIG_SYNC_EVENT_ID)
-		wlcore_smart_config_sync_event(wl, mbox->sc_sync_channel,
-					       mbox->sc_sync_band);
-
-	if (vector & SMART_CONFIG_DECODE_EVENT_ID)
-		wlcore_smart_config_decode_event(wl,
-						 mbox->sc_ssid_len,
-						 mbox->sc_ssid,
-						 mbox->sc_pwd_len,
-						 mbox->sc_pwd);
 
 out_event:
 

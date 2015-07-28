@@ -12,3 +12,4 @@ obj-$(CPTCFG_IGB) += igb/
 #obj-$(CPTCFG_I40E) += i40e/
 #obj-$(CPTCFG_IXGB) += ixgb/
 #obj-$(CPTCFG_I40EVF) += i40evf/
+#obj-$(CPTCFG_FM10K) += fm10k/

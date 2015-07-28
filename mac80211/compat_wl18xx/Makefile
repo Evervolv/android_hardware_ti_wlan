@@ -6,7 +6,7 @@ ifeq ($(KERNELRELEASE),)
 
 MAKEFLAGS += --no-print-directory
 SHELL := /bin/bash
-BACKPORT_PWD := $(shell pwd)
+BACKPORT_DIR := $(shell pwd)
 
 KMODDIR ?= updates
 ifneq ($(origin KLIB), undefined)
@@ -22,7 +22,7 @@ KERNEL_CONFIG := $(KLIB_BUILD)/.config
 KERNEL_MAKEFILE := $(KLIB_BUILD)/Makefile
 CONFIG_MD5 := $(shell md5sum $(KERNEL_CONFIG) 2>/dev/null | sed 's/\s.*//')
 
-export KLIB KLIB_BUILD BACKPORT_PWD KMODDIR KMODPATH_ARG ROOTFS_DIR
+export KLIB KLIB_BUILD BACKPORT_DIR KMODDIR KMODPATH_ARG ROOTFS_DIR
 
 # disable built-in rules for this file
 .SUFFIXES:
@@ -87,15 +87,16 @@ mrproper:
 			done								\
 		) > Kconfig.kernel							;\
 		kver=$$($(MAKE) --no-print-directory -C $(KLIB_BUILD) kernelversion |	\
-			sed 's/^\(\(3\|2\.6\)\.[0-9]\+\).*/\1/;t;d')			;\
+			sed 's/^\(\([3-4]\|2\.6\)\.[0-9]\+\).*/\1/;t;d')		;\
 		test "$$kver" != "" || echo "Kernel version parse failed!"		;\
 		test "$$kver" != ""							;\
 		kvers="$$(seq 14 39 | sed 's/^/2.6./')"					;\
-		kvers="$$kvers $$(seq 0 99 | sed 's/^/3./')"				;\
+		kvers="$$kvers $$(seq 0 19 | sed 's/^/3./')"				;\
+		kvers="$$kvers $$(seq 0 99 | sed 's/^/4./')"				;\
 		print=0									;\
 		for v in $$kvers ; do							\
 			if [ "$$print" = "1" ] ; then					\
-				echo config BACKPORT_KERNEL_$$(echo $$v | tr . _)	;\
+				echo config KERNEL_$$(echo $$v | tr . _)	;\
 				echo "    def_bool y"					;\
 			fi								;\
 			if [ "$$v" = "$$kver" ] ; then print=1 ; fi			;\
@@ -161,5 +162,5 @@ help: defconfig-help
 	@echo ""
 	@echo "Execute "make" or "make all" to build all targets marked with [*]"
 else
-include $(BACKPORT_PWD)/Makefile.kernel
+include $(BACKPORT_DIR)/Makefile.kernel
 endif

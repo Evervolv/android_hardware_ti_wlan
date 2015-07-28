@@ -1,12 +1,11 @@
 config LIBERTAS
-	depends on !BACKPORT_KERNEL_2_6_27
 	tristate "Marvell 8xxx Libertas WLAN driver support"
 	depends on m
 	depends on CFG80211
 	depends on WIRELESS_EXT
 	depends on WEXT_SPY
 	select LIB80211
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	---help---
 	  A library for Marvell Libertas 8xxx devices.
 
@@ -20,12 +19,11 @@ config LIBERTAS_USB
 config LIBERTAS_CS
 	tristate "Marvell Libertas 8385 CompactFlash 802.11b/g cards"
 	depends on m
-	depends on LIBERTAS && PCMCIA
+	depends on LIBERTAS && PCMCIA && HAS_IOPORT_MAP
 	---help---
 	  A driver for Marvell Libertas 8385 CompactFlash devices.
 
 config LIBERTAS_SDIO
-	depends on !BACKPORT_KERNEL_2_6_32
 	tristate "Marvell Libertas 8385/8686/8688 SDIO 802.11b/g cards"
 	depends on m
 	depends on LIBERTAS && MMC

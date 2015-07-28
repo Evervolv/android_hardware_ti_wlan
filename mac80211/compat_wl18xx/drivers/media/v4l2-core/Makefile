@@ -33,6 +33,7 @@ obj-$(CPTCFG_VIDEOBUF2_MEMOPS) += videobuf2-memops.o
 obj-$(CPTCFG_VIDEOBUF2_VMALLOC) += videobuf2-vmalloc.o
 obj-$(CPTCFG_VIDEOBUF2_DMA_CONTIG) += videobuf2-dma-contig.o
 obj-$(CPTCFG_VIDEOBUF2_DMA_SG) += videobuf2-dma-sg.o
+obj-$(CPTCFG_VIDEOBUF2_DVB) += videobuf2-dvb.o
 
 ccflags-y += -I$(backport_srctree)/drivers/media/dvb-core
 ccflags-y += -I$(backport_srctree)/drivers/media/dvb-frontends

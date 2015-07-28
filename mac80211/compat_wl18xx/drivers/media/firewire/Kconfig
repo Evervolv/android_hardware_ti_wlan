@@ -1,5 +1,5 @@
 config DVB_FIREDTV
-	depends on !BACKPORT_KERNEL_3_11
+	depends on !KERNEL_3_11
 	tristate "FireDTV and FloppyDTV"
 	depends on m
 	depends on DVB_CORE && FIREWIRE

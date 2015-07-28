@@ -194,7 +194,7 @@ comment "Video decoders"
 config VIDEO_ADV7180
 	tristate "Analog Devices ADV7180 decoder"
 	depends on m
-	depends on VIDEO_V4L2 && I2C
+	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
 	---help---
 	  Support for the Analog Devices ADV7180 video decoder.
 
@@ -213,6 +213,7 @@ config VIDEO_ADV7183
 	  module will be called adv7183.
 
 config VIDEO_ADV7604
+	depends on !KERNEL_3_13
 	tristate "Analog Devices ADV7604 decoder"
 	depends on m
 	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
@@ -229,6 +230,7 @@ config VIDEO_ADV7842
 	tristate "Analog Devices ADV7842 decoder"
 	depends on m
 	depends on VIDEO_V4L2 && I2C && VIDEO_V4L2_SUBDEV_API
+	depends on HDMI
 	---help---
 	  Support for the Analog Devices ADV7842 video decoder.
 
@@ -310,16 +312,6 @@ config VIDEO_SAA711X
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called saa7115.
-
-config VIDEO_SAA7191
-	tristate "Philips SAA7191 video decoder"
-	depends on m
-	depends on VIDEO_V4L2 && I2C
-	---help---
-	  Support for the Philips SAA7191 video decoder.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called saa7191.
 
 config VIDEO_TVP514X
 	tristate "Texas Instruments TVP514x video decoder"
@@ -452,6 +444,7 @@ config VIDEO_ADV7175
 	  module will be called adv7175.
 
 config VIDEO_ADV7343
+	depends on !KERNEL_3_4
 	tristate "ADV7343 video encoder"
 	depends on m
 	depends on I2C
@@ -522,8 +515,19 @@ config VIDEO_SMIAPP_PLL
 	tristate
 	depends on m
 
+config VIDEO_OV2659
+	tristate "OmniVision OV2659 sensor support"
+	depends on m
+	depends on VIDEO_V4L2 && I2C
+	depends on MEDIA_CAMERA_SUPPORT
+	---help---
+	  This is a Video4Linux2 sensor-level driver for the OmniVision
+	  OV2659 camera.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ov2659.
+
 config VIDEO_OV7640
-	depends on !BACKPORT_KERNEL_3_6
 	tristate "OmniVision OV7640 sensor support"
 	depends on m
 	depends on I2C && VIDEO_V4L2
@@ -576,6 +580,7 @@ config VIDEO_MT9M032
 	  models only.
 
 config VIDEO_MT9P031
+	depends on !KERNEL_3_5
 	tristate "Aptina MT9P031 support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -586,6 +591,7 @@ config VIDEO_MT9P031
 	  (Micron) mt9p031 5 Mpixel camera.
 
 config VIDEO_MT9T001
+	depends on !KERNEL_3_5
 	tristate "Aptina MT9T001 support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -605,10 +611,12 @@ config VIDEO_MT9V011
 	  em28xx driver.
 
 config VIDEO_MT9V032
+	depends on !KERNEL_3_3
 	tristate "Micron MT9V032 sensor support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
 	depends on MEDIA_CAMERA_SUPPORT
+	depends on REGMAP_I2C
 	---help---
 	  This is a Video4Linux2 sensor-level driver for the Micron
 	  MT9V032 752x480 CMOS sensor.
@@ -622,6 +630,7 @@ config VIDEO_SR030PC30
 	  This driver supports SR030PC30 VGA camera from Siliconfile
 
 config VIDEO_NOON010PC30
+	depends on !KERNEL_3_5
 	tristate "Siliconfile NOON010PC30 sensor support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -632,6 +641,8 @@ config VIDEO_NOON010PC30
 source "drivers/media/i2c/m5mols/Kconfig"
 
 config VIDEO_S5K6AA
+	depends on !KERNEL_3_3
+	depends on !KERNEL_3_13
 	tristate "Samsung S5K6AAFX sensor support"
 	depends on m
 	depends on MEDIA_CAMERA_SUPPORT
@@ -640,7 +651,18 @@ config VIDEO_S5K6AA
 	  This is a V4L2 sensor-level driver for Samsung S5K6AA(FX) 1.3M
 	  camera sensor with an embedded SoC image signal processor.
 
+config VIDEO_S5K6A3
+	depends on !KERNEL_3_13
+	tristate "Samsung S5K6A3 sensor support"
+	depends on m
+	depends on MEDIA_CAMERA_SUPPORT
+	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
+	---help---
+	  This is a V4L2 sensor-level driver for Samsung S5K6A3 raw
+	  camera sensor.
+
 config VIDEO_S5K4ECGX
+	depends on !KERNEL_3_4
         tristate "Samsung S5K4ECGX sensor support"
         depends on m
         depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -649,6 +671,7 @@ config VIDEO_S5K4ECGX
           camera sensor with an embedded SoC image signal processor.
 
 config VIDEO_S5K5BAF
+	depends on !KERNEL_3_4
 	tristate "Samsung S5K5BAF sensor support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -659,6 +682,7 @@ config VIDEO_S5K5BAF
 source "drivers/media/i2c/smiapp/Kconfig"
 
 config VIDEO_S5C73M3
+	depends on !KERNEL_3_6
 	tristate "Samsung S5C73M3 sensor support"
 	depends on m
 	depends on I2C && SPI && VIDEO_V4L2 && VIDEO_V4L2_SUBDEV_API
@@ -687,6 +711,7 @@ config VIDEO_AS3645A
 	  build in control for flash, torch and indicator LEDs.
 
 config VIDEO_LM3560
+	depends on !KERNEL_3_3
 	tristate "LM3560 dual flash driver support"
 	depends on m
 	depends on I2C && VIDEO_V4L2 && MEDIA_CONTROLLER
@@ -694,6 +719,17 @@ config VIDEO_LM3560
 	depends on REGMAP_I2C
 	---help---
 	  This is a driver for the lm3560 dual flash controllers. It controls
+	  flash, torch LEDs.
+
+config VIDEO_LM3646
+	depends on !KERNEL_3_3
+	tristate "LM3646 dual flash driver support"
+	depends on m
+	depends on I2C && VIDEO_V4L2 && MEDIA_CONTROLLER
+	depends on MEDIA_CAMERA_SUPPORT
+	depends on REGMAP_I2C
+	---help---
+	  This is a driver for the lm3646 dual flash controllers. It controls
 	  flash, torch LEDs.
 
 comment "Video improvement chips"
@@ -729,6 +765,7 @@ config VIDEO_SAA6752HS
 	tristate "Philips SAA6752HS MPEG-2 Audio/Video Encoder"
 	depends on m
 	depends on VIDEO_V4L2 && I2C
+	depends on CRC32
 	---help---
 	  Support for the Philips SAA6752HS MPEG-2 video and MPEG-audio/AC-3
 	  audio encoder with multiplexer.

@@ -1,9 +1,7 @@
 config BT_HIDP
-	depends on !BACKPORT_KERNEL_2_6_28
-	depends on !BACKPORT_KERNEL_2_6_33
 	tristate "HIDP protocol support"
 	depends on m
-	depends on BT && INPUT
+	depends on BT_BREDR && INPUT
 	depends on HID
 	help
 	  HIDP (Human Interface Device Protocol) is a transport layer

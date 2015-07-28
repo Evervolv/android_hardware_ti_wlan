@@ -2,7 +2,7 @@ config P54_COMMON
 	tristate "Softmac Prism54 support"
 	depends on m
 	depends on MAC80211
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	depends on CRC_CCITT
 	---help---
 	  This is common code for isl38xx/stlc45xx based modules.

@@ -513,7 +513,7 @@ static int p54u_upload_firmware_3887(struct ieee80211_hw *dev)
 	if (!buf)
 		return -ENOMEM;
 
-	left = block_size = min((size_t)P54U_FW_BLOCK, priv->fw->size);
+	left = block_size = min_t(size_t, P54U_FW_BLOCK, priv->fw->size);
 	strcpy(buf, p54u_firmware_upload_3887);
 	left -= strlen(p54u_firmware_upload_3887);
 	tmp += strlen(p54u_firmware_upload_3887);
@@ -1053,6 +1053,10 @@ static int p54u_probe(struct usb_interface *intf,
 		priv->upload_fw = p54u_upload_firmware_net2280;
 	}
 	err = p54u_load_firmware(dev, intf);
+	if (err) {
+		usb_put_dev(udev);
+		p54_free_common(dev);
+	}
 	return err;
 }
 
@@ -1138,10 +1142,10 @@ static struct usb_driver p54u_driver = {
 	.resume = p54u_resume,
 	.reset_resume = p54u_resume,
 #endif /* CONFIG_PM */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27))
 	.soft_unbind = 1,
-#endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
 	.disable_hub_initiated_lpm = 1,
+#endif
 };
 
 module_usb_driver(p54u_driver);

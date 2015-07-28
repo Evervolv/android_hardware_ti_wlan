@@ -1,5 +1,4 @@
 config VIDEO_IVTV
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Conexant cx23416/cx23415 MPEG encoder/decoder support"
 	depends on m
 	depends on VIDEO_V4L2 && PCI && I2C

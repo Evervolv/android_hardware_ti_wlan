@@ -90,25 +90,6 @@ found:
 }
 #endif /* CPTCFG_SSB_PCMCIAHOST */
 
-#ifdef CPTCFG_SSB_SDIOHOST
-struct ssb_bus *ssb_sdio_func_to_bus(struct sdio_func *func)
-{
-	struct ssb_bus *bus;
-
-	ssb_buses_lock();
-	list_for_each_entry(bus, &buses, list) {
-		if (bus->bustype == SSB_BUSTYPE_SDIO &&
-		    bus->host_sdio == func)
-			goto found;
-	}
-	bus = NULL;
-found:
-	ssb_buses_unlock();
-
-	return bus;
-}
-#endif /* CPTCFG_SSB_SDIOHOST */
-
 int ssb_for_each_bus_call(unsigned long data,
 			  int (*func)(struct ssb_bus *bus, unsigned long data))
 {
@@ -418,7 +399,7 @@ static struct bus_type ssb_bustype = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,12,0)
 	.dev_groups	= ssb_device_groups,
 #else
-	.dev_attrs	= ssb_device_dev_attrs,
+	.dev_attrs = ssb_device_dev_attrs,
 #endif
 };
 
@@ -529,11 +510,7 @@ static int ssb_devices_register(struct ssb_bus *bus)
 			break;
 		case SSB_BUSTYPE_PCMCIA:
 #ifdef CPTCFG_SSB_PCMCIAHOST
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 			sdev->irq = bus->host_pcmcia->irq;
-#else
-			sdev->irq = bus->host_pcmcia->irq.AssignedIRQ;
-#endif
 			dev->parent = &bus->host_pcmcia->dev;
 #endif
 			break;
@@ -1167,6 +1144,8 @@ static u32 ssb_tmslow_reject_bitmask(struct ssb_device *dev)
 	case SSB_IDLOW_SSBREV_25:     /* TODO - find the proper REJECT bit */
 	case SSB_IDLOW_SSBREV_27:     /* same here */
 		return SSB_TMSLOW_REJECT;	/* this is a guess */
+	case SSB_IDLOW_SSBREV:
+		break;
 	default:
 		WARN(1, KERN_INFO "ssb: Backplane Revision 0x%.8X\n", rev);
 	}
@@ -1472,9 +1451,9 @@ static int __init ssb_modinit(void)
 {
 	int err;
 
-	init_ssb_device_attrs();
 	/* See the comment at the ssb_is_early_boot definition */
 	ssb_is_early_boot = 0;
+	init_ssb_device_attrs();
 	err = bus_register(&ssb_bustype);
 	if (err)
 		return err;

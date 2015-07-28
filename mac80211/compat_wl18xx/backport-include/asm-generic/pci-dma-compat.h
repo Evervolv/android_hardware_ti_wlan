@@ -1,17 +1,17 @@
-#ifndef __BACKPORT_ASM_PCI_DMA_COMPAT_H
-#define __BACKPORT_ASM_PCI_DMA_COMPAT_H
+#ifndef __BACKPORT_ASM_GENERIC_PCI_DMA_COMPAT_H
+#define __BACKPORT_ASM_GENERIC_PCI_DMA_COMPAT_H
 #include_next <asm-generic/pci-dma-compat.h>
-#include <linux/version.h>
 
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)
-#include <backport/magic.h>
-
-#define pci_dma_mapping_error1(dma_addr) dma_mapping_error1(dma_addr)
-#define pci_dma_mapping_error2(pdev, dma_addr) dma_mapping_error2(pdev, dma_addr)
-#undef pci_dma_mapping_error
-#define pci_dma_mapping_error(...) \
-	macro_dispatcher(pci_dma_mapping_error, __VA_ARGS__)(__VA_ARGS__)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0)
+#define pci_zalloc_consistent LINUX_BACKPORT(pci_zalloc_consistent)
+static inline void *pci_zalloc_consistent(struct pci_dev *hwdev, size_t size,
+					  dma_addr_t *dma_handle)
+{
+	void *ret = pci_alloc_consistent(hwdev, size, dma_handle);
+	if (ret)
+		memset(ret, 0, size);
+	return ret;
+}
 #endif
 
-#endif /* __BACKPORT_ASM_PCI_DMA_COMPAT_H */
+#endif /* __BACKPORT_ASM_GENERIC_PCI_DMA_COMPAT_H */

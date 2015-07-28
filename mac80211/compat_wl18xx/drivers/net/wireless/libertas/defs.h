@@ -16,14 +16,6 @@
 #define DRV_NAME "libertas"
 #endif
 
-/*
- * Really nasty hack to avoid stuffing compat.diff with tons of ifdefs,
- * we could add this to a compat header file but too lazy to check ml_priv
- * is not used anywhere else
- */
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26))
-#define ml_priv priv
-#endif
 
 #define LBS_DEB_ENTER	0x00000001
 #define LBS_DEB_LEAVE	0x00000002
@@ -98,7 +90,8 @@ do { if ((lbs_debug & (grp)) == (grp)) \
 #define lbs_deb_cfg80211(fmt, args...)  LBS_DEB_LL(LBS_DEB_CFG80211, " cfg80211", fmt, ##args)
 
 #ifdef DEBUG
-static inline void lbs_deb_hex(unsigned int grp, const char *prompt, u8 *buf, int len)
+static inline void lbs_deb_hex(unsigned int grp, const char *prompt,
+			       const u8 *buf, int len)
 {
 	int i = 0;
 

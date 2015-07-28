@@ -35,7 +35,7 @@ char atl1e_driver_version[] = DRV_VERSION;
  * { Vendor ID, Device ID, SubVendor ID, SubDevice ID,
  *   Class, Class Mask, private data (not used) }
  */
-static DEFINE_PCI_DEVICE_TABLE(atl1e_pci_tbl) = {
+static const struct pci_device_id atl1e_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_ATTANSIC, PCI_DEVICE_ID_ATTANSIC_L1E)},
 	{PCI_DEVICE(PCI_VENDOR_ID_ATTANSIC, 0x1066)},
 	/* required last entry */
@@ -313,7 +313,6 @@ static void atl1e_set_multi(struct net_device *netdev)
 	}
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 static void __atl1e_rx_mode(netdev_features_t features, u32 *mac_ctrl_data)
 {
 
@@ -340,7 +339,6 @@ static void atl1e_rx_mode(struct net_device *netdev,
 	AT_WRITE_REG(&adapter->hw, REG_MAC_CTRL, mac_ctrl_data);
 	atl1e_irq_enable(adapter);
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 
 static void __atl1e_vlan_mode(netdev_features_t features, u32 *mac_ctrl_data)
@@ -401,7 +399,6 @@ static int atl1e_set_mac_addr(struct net_device *netdev, void *p)
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 static netdev_features_t atl1e_fix_features(struct net_device *netdev,
 	netdev_features_t features)
 {
@@ -431,7 +428,6 @@ static int atl1e_set_features(struct net_device *netdev,
 
 	return 0;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 /**
  * atl1e_change_mtu - Change the Maximum Transfer Unit
@@ -835,16 +831,13 @@ static int atl1e_setup_ring_resources(struct atl1e_adapter *adapter)
 	/* real ring DMA buffer */
 
 	size = adapter->ring_size;
-	adapter->ring_vir_addr = pci_alloc_consistent(pdev,
-			adapter->ring_size, &adapter->ring_dma);
-
+	adapter->ring_vir_addr = pci_zalloc_consistent(pdev, adapter->ring_size,
+						       &adapter->ring_dma);
 	if (adapter->ring_vir_addr == NULL) {
 		netdev_err(adapter->netdev,
 			   "pci_alloc_consistent failed, size = D%d\n", size);
 		return -ENOMEM;
 	}
-
-	memset(adapter->ring_vir_addr, 0, adapter->ring_size);
 
 	rx_page_desc = rx_ring->rx_page_desc;
 
@@ -1645,17 +1638,17 @@ static u16 atl1e_cal_tdp_req(const struct sk_buff *skb)
 static int atl1e_tso_csum(struct atl1e_adapter *adapter,
 		       struct sk_buff *skb, struct atl1e_tpd_desc *tpd)
 {
+	unsigned short offload_type;
 	u8 hdr_len;
 	u32 real_len;
-	unsigned short offload_type;
-	int err;
 
 	if (skb_is_gso(skb)) {
-		if (skb_header_cloned(skb)) {
-			err = pskb_expand_head(skb, 0, 0, GFP_ATOMIC);
-			if (unlikely(err))
-				return -1;
-		}
+		int err;
+
+		err = skb_cow_head(skb, 0);
+		if (err < 0)
+			return err;
+
 		offload_type = skb_shinfo(skb)->gso_type;
 
 		if (offload_type & SKB_GSO_TCPV4) {
@@ -1899,8 +1892,8 @@ static netdev_tx_t atl1e_xmit_frame(struct sk_buff *skb,
 
 	tpd = atl1e_get_tpd(adapter);
 
-	if (vlan_tx_tag_present(skb)) {
-		u16 vlan_tag = vlan_tx_tag_get(skb);
+	if (skb_vlan_tag_present(skb)) {
+		u16 vlan_tag = skb_vlan_tag_get(skb);
 		u16 atl1e_vlan_tag;
 
 		tpd->word3 |= 1 << TPD_INS_VL_TAG_SHIFT;
@@ -1999,11 +1992,7 @@ void atl1e_down(struct atl1e_adapter *adapter)
 	 * reschedule our watchdog timer */
 	set_bit(__AT_DOWN, &adapter->flags);
 
-#if defined(NETIF_F_LLTX) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netif_stop_queue(netdev);
-#else
-	netif_tx_disable(netdev);
-#endif
 
 	/* reset MAC to disable all RX/TX */
 	atl1e_reset_hw(&adapter->hw);
@@ -2273,10 +2262,8 @@ static const struct net_device_ops atl1e_netdev_ops = {
 	.ndo_set_rx_mode	= atl1e_set_multi,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= atl1e_set_mac_addr,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	.ndo_fix_features	= atl1e_fix_features,
 	.ndo_set_features	= atl1e_set_features,
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 	.ndo_change_mtu		= atl1e_change_mtu,
 	.ndo_do_ioctl		= atl1e_ioctl,
 	.ndo_tx_timeout		= atl1e_tx_timeout,
@@ -2296,17 +2283,12 @@ static int atl1e_init_netdev(struct net_device *netdev, struct pci_dev *pdev)
 	netdev->watchdog_timeo = AT_TX_WATCHDOG;
 	atl1e_set_ethtool_ops(netdev);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netdev->hw_features = NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_TSO |
 			      NETIF_F_HW_VLAN_CTAG_RX;
 	netdev->features = netdev->hw_features | NETIF_F_LLTX |
 			   NETIF_F_HW_VLAN_CTAG_TX;
 	/* not enabled by default */
 	netdev->hw_features |= NETIF_F_RXALL | NETIF_F_RXFCS;
-#else
-	netdev->features = NETIF_F_SG | NETIF_F_HW_CSUM | NETIF_F_TSO |
-			   NETIF_F_HW_VLAN_RX | NETIF_F_LLTX | NETIF_F_HW_VLAN_TX;
-#endif
 	return 0;
 }
 
@@ -2391,9 +2373,8 @@ static int atl1e_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	netif_napi_add(netdev, &adapter->napi, atl1e_clean, 64);
 
-	init_timer(&adapter->phy_config_timer);
-	adapter->phy_config_timer.function = atl1e_phy_config;
-	adapter->phy_config_timer.data = (unsigned long) adapter;
+	setup_timer(&adapter->phy_config_timer, atl1e_phy_config,
+		    (unsigned long)adapter);
 
 	/* get user settings */
 	atl1e_check_options(adapter);
@@ -2451,7 +2432,7 @@ err_reset:
 err_register:
 err_sw_init:
 err_eeprom:
-	iounmap(adapter->hw.hw_addr);
+	pci_iounmap(pdev, adapter->hw.hw_addr);
 err_init_netdev:
 err_ioremap:
 	free_netdev(netdev);
@@ -2489,7 +2470,7 @@ static void atl1e_remove(struct pci_dev *pdev)
 	unregister_netdev(netdev);
 	atl1e_free_ring_resources(adapter);
 	atl1e_force_ps(&adapter->hw);
-	iounmap(adapter->hw.hw_addr);
+	pci_iounmap(pdev, adapter->hw.hw_addr);
 	pci_release_regions(pdev);
 	free_netdev(netdev);
 	pci_disable_device(pdev);
@@ -2574,7 +2555,15 @@ static void atl1e_io_resume(struct pci_dev *pdev)
 	netif_device_attach(netdev);
 }
 
-static const struct pci_error_handlers atl1e_err_handler = {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+static 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+const 
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0) */
+struct pci_error_handlers atl1e_err_handler = {
+#else
+static struct pci_error_handlers atl1e_err_handler = {
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0) */
 	.error_detected = atl1e_io_error_detected,
 	.slot_reset = atl1e_io_slot_reset,
 	.resume = atl1e_io_resume,

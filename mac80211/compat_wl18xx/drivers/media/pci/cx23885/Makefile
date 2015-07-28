@@ -8,7 +8,6 @@ obj-$(CPTCFG_VIDEO_CX23885) += cx23885.o
 obj-$(CPTCFG_MEDIA_ALTERA_CI) += altera-ci.o
 
 ccflags-y += -I$(backport_srctree)/drivers/media/i2c
-ccflags-y += -I$(backport_srctree)/drivers/media/common
 ccflags-y += -I$(backport_srctree)/drivers/media/tuners
 ccflags-y += -I$(backport_srctree)/drivers/media/dvb-core
 ccflags-y += -I$(backport_srctree)/drivers/media/dvb-frontends

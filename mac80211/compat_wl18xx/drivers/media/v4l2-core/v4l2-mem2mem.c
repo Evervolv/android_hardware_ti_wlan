@@ -97,7 +97,7 @@ EXPORT_SYMBOL(v4l2_m2m_get_vq);
  */
 void *v4l2_m2m_next_buf(struct v4l2_m2m_queue_ctx *q_ctx)
 {
-	struct v4l2_m2m_buffer *b = NULL;
+	struct v4l2_m2m_buffer *b;
 	unsigned long flags;
 
 	spin_lock_irqsave(&q_ctx->rdy_spinlock, flags);
@@ -119,7 +119,7 @@ EXPORT_SYMBOL_GPL(v4l2_m2m_next_buf);
  */
 void *v4l2_m2m_buf_remove(struct v4l2_m2m_queue_ctx *q_ctx)
 {
-	struct v4l2_m2m_buffer *b = NULL;
+	struct v4l2_m2m_buffer *b;
 	unsigned long flags;
 
 	spin_lock_irqsave(&q_ctx->rdy_spinlock, flags);
@@ -208,7 +208,7 @@ static void v4l2_m2m_try_run(struct v4l2_m2m_dev *m2m_dev)
  * An example of the above could be an instance that requires more than one
  * src/dst buffer per transaction.
  */
-static void v4l2_m2m_try_schedule(struct v4l2_m2m_ctx *m2m_ctx)
+void v4l2_m2m_try_schedule(struct v4l2_m2m_ctx *m2m_ctx)
 {
 	struct v4l2_m2m_dev *m2m_dev;
 	unsigned long flags_job, flags_out, flags_cap;
@@ -274,6 +274,7 @@ static void v4l2_m2m_try_schedule(struct v4l2_m2m_ctx *m2m_ctx)
 
 	v4l2_m2m_try_run(m2m_dev);
 }
+EXPORT_SYMBOL_GPL(v4l2_m2m_try_schedule);
 
 /**
  * v4l2_m2m_cancel_job() - cancel pending jobs for the context
@@ -439,6 +440,7 @@ int v4l2_m2m_create_bufs(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 }
 EXPORT_SYMBOL_GPL(v4l2_m2m_create_bufs);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
 /**
  * v4l2_m2m_expbuf() - export a source or destination buffer, depending on
  * the type
@@ -452,6 +454,7 @@ int v4l2_m2m_expbuf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 	return vb2_expbuf(vq, eb);
 }
 EXPORT_SYMBOL_GPL(v4l2_m2m_expbuf);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0) */
 /**
  * v4l2_m2m_streamon() - turn on streaming for a video queue
  */
@@ -568,8 +571,12 @@ unsigned int v4l2_m2m_poll(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 
 	if (m2m_ctx->m2m_dev->m2m_ops->lock)
 		m2m_ctx->m2m_dev->m2m_ops->lock(m2m_ctx->priv);
-	else if (m2m_ctx->q_lock)
-		mutex_lock(m2m_ctx->q_lock);
+	else if (m2m_ctx->q_lock) {
+		if (mutex_lock_interruptible(m2m_ctx->q_lock)) {
+			rc |= POLLERR;
+			goto end;
+		}
+	}
 
 	spin_lock_irqsave(&src_q->done_lock, flags);
 	if (!list_empty(&src_q->done_list))
@@ -798,6 +805,7 @@ int v4l2_m2m_ioctl_dqbuf(struct file *file, void *priv,
 }
 EXPORT_SYMBOL_GPL(v4l2_m2m_ioctl_dqbuf);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
 int v4l2_m2m_ioctl_expbuf(struct file *file, void *priv,
 				struct v4l2_exportbuffer *eb)
 {
@@ -806,6 +814,7 @@ int v4l2_m2m_ioctl_expbuf(struct file *file, void *priv,
 	return v4l2_m2m_expbuf(file, fh->m2m_ctx, eb);
 }
 EXPORT_SYMBOL_GPL(v4l2_m2m_ioctl_expbuf);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0) */
 
 int v4l2_m2m_ioctl_streamon(struct file *file, void *priv,
 				enum v4l2_buf_type type)

@@ -14,6 +14,7 @@ config NFC_PN544
 	  Say N if unsure.
 
 config NFC_PN544_I2C
+	depends on !KERNEL_3_13
 	tristate "NFC PN544 i2c support"
 	depends on m
 	depends on NFC_PN544 && I2C && NFC_SHDLC

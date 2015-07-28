@@ -17,4 +17,8 @@ ath-objs :=	main.o \
 		dfs_pri_detector.o
 
 ath-$(CPTCFG_ATH_DEBUG) += debug.o
+ath-$(CPTCFG_ATH_TRACEPOINTS) += trace.o
+
 ccflags-y += -D__CHECK_ENDIAN__
+
+CFLAGS_trace.o := -I$(src)

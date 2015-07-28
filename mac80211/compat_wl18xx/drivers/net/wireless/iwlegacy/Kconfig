@@ -1,10 +1,10 @@
 config IWLEGACY
 	tristate
 	depends on m
-	select BACKPORT_FW_LOADER
-	select BACKPORT_NEW_LEDS
-	select BACKPORT_LEDS_CLASS
-	select BACKPORT_LEDS_TRIGGERS
+	depends on FW_LOADER
+	select BPAUTO_NEW_LEDS
+	select BPAUTO_LEDS_CLASS
+	select BPAUTO_LEDS_TRIGGERS
 	select MAC80211_LEDS
 
 config IWL4965

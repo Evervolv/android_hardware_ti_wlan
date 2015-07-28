@@ -40,6 +40,7 @@ static struct usb_device_id ath9k_hif_usb_ids[] = {
 	{ USB_DEVICE(0x0cf3, 0xb003) }, /* Ubiquiti WifiStation Ext */
 	{ USB_DEVICE(0x0cf3, 0xb002) }, /* Ubiquiti WifiStation */
 	{ USB_DEVICE(0x057c, 0x8403) }, /* AVM FRITZ!WLAN 11N v2 USB */
+	{ USB_DEVICE(0x0471, 0x209e) }, /* Philips (or NXP) PTA01 */
 
 	{ USB_DEVICE(0x0cf3, 0x7015),
 	  .driver_info = AR9287_USB },  /* Atheros */
@@ -1367,10 +1368,10 @@ static struct usb_driver ath9k_hif_usb_driver = {
 	.reset_resume = ath9k_hif_usb_resume,
 #endif
 	.id_table = ath9k_hif_usb_ids,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27))
 	.soft_unbind = 1,
-#endif
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))
 	.disable_hub_initiated_lpm = 1,
+#endif
 };
 
 int ath9k_hif_usb_init(void)

@@ -24,7 +24,6 @@ config VIDEO_HEXIUM_ORION
 	  module will be called hexium_orion.
 
 config VIDEO_MXB
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Siemens-Nixdorf 'Multimedia eXtension Board'"
 	depends on m
 	depends on PCI && VIDEO_V4L2 && I2C

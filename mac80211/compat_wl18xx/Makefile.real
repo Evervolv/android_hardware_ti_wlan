@@ -32,6 +32,11 @@ usedefconfig:
 	@$(MAKE) -C kconf conf
 	@./kconf/conf --defconfig=defconfig Kconfig
 
+.PHONY: savedefconfig
+savedefconfig:
+	@$(MAKE) -C kconf conf
+	@./kconf/conf --savedefconfig=defconfig Kconfig
+
 defconfig-%::
 	@$(MAKE) -C kconf conf
 	@./kconf/conf --defconfig=defconfigs/$(@:defconfig-%=%) Kconfig
@@ -84,14 +89,13 @@ modules: backport-include/backport/autoconf.h
 
 .PHONY: install
 install: modules
-	@$(MAKE) -C $(KLIB_BUILD) M=$(BACKPORT_PWD)			\
+	@$(MAKE) -C $(KLIB_BUILD) M=$(BACKPORT_DIR)			\
 		INSTALL_MOD_DIR=$(KMODDIR) $(KMODPATH_ARG)		\
 		modules_install
 ifeq ($(ROOTFS_DIR),)
 	@./scripts/blacklist.sh $(KLIB)/ $(KLIB)/$(KMODDIR)
 	@./scripts/compress_modules.sh $(KLIB)/$(KMODDIR)
 	@./scripts/check_depmod.sh
-	@./scripts/backport_firmware_install.sh
 	@/sbin/depmod -a
 	@./scripts/update-initramfs.sh $(KLIB)
 endif

@@ -3,7 +3,7 @@ config B43LEGACY
 	depends on m
 	depends on SSB_POSSIBLE && MAC80211 && HAS_DMA
 	select SSB
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	---help---
 	  b43legacy is a driver for 802.11b devices from Broadcom (BCM4301 and
 	  BCM4303) and early model 802.11g chips (BCM4306 Ver. 2) used in the

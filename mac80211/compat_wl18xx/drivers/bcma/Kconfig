@@ -27,6 +27,7 @@ config BCMA_HOST_PCI_POSSIBLE
 config BCMA_HOST_PCI
 	bool "Support for BCMA on PCI-host bus"
 	depends on BCMA_HOST_PCI_POSSIBLE
+	select BCMA_DRIVER_PCI
 	default y
 
 config BCMA_DRIVER_PCI_HOSTMODE
@@ -36,7 +37,7 @@ config BCMA_DRIVER_PCI_HOSTMODE
 	  PCI core hostmode operation (external PCI bus).
 
 config BCMA_HOST_SOC
-	depends on !BACKPORT_KERNEL_3_7
+	depends on !KERNEL_3_7
 	bool "Support for BCMA in a SoC"
 	depends on BCMA
 	help
@@ -46,8 +47,24 @@ config BCMA_HOST_SOC
 
 	  If unsure, say N
 
+config BCMA_DRIVER_PCI
+	bool "BCMA Broadcom PCI core driver"
+	depends on BCMA && PCI
+	default y
+	help
+	  BCMA bus may have many versions of PCIe core. This driver
+	  supports:
+	  1) PCIe core working in clientmode
+	  2) PCIe Gen 2 clientmode core
+
+	  In general PCIe (Gen 2) clientmode core is required on PCIe
+	  hosted buses. It's responsible for initialization and basic
+	  hardware management.
+	  This driver is also prerequisite for a hostmode PCIe core
+	  support.
+
 config BCMA_DRIVER_MIPS
-	depends on !BACKPORT_KERNEL_3_3
+	depends on !KERNEL_3_3
 	bool "BCMA Broadcom MIPS core driver"
 	depends on BCMA && MIPS
 	help
@@ -76,8 +93,6 @@ config BCMA_DRIVER_GMAC_CMN
 	  If unsure, say N
 
 config BCMA_DRIVER_GPIO
-	depends on !BACKPORT_KERNEL_2_6_28
-	depends on !BACKPORT_KERNEL_3_0
 	bool "BCMA GPIO driver"
 	depends on BCMA && GPIOLIB
 	select IRQ_DOMAIN if BCMA_HOST_SOC

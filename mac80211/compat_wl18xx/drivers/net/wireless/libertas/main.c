@@ -574,11 +574,7 @@ static int lbs_thread(void *data)
 
 			/* Reset card, but only when it isn't in the process
 			 * of being shutdown anyway. */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,0,0))
 			if (!dev->dismantle && priv->reset_card)
-#else
-			if (priv->reset_card)
-#endif
 				priv->reset_card(priv);
 		}
 		priv->cmd_timed_out = 0;
@@ -671,7 +667,7 @@ static int lbs_setup_firmware(struct lbs_private *priv)
 	lbs_deb_enter(LBS_DEB_FW);
 
 	/* Read MAC address from firmware */
-	memset(priv->current_addr, 0xff, ETH_ALEN);
+	eth_broadcast_addr(priv->current_addr);
 	ret = lbs_update_hw_spec(priv);
 	if (ret)
 		goto done;
@@ -875,7 +871,7 @@ static int lbs_init_adapter(struct lbs_private *priv)
 
 	lbs_deb_enter(LBS_DEB_MAIN);
 
-	memset(priv->current_addr, 0xff, ETH_ALEN);
+	eth_broadcast_addr(priv->current_addr);
 
 	priv->connect_status = LBS_DISCONNECTED;
 	priv->channel = DEFAULT_AD_HOC_CHANNEL;
@@ -985,7 +981,7 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 		goto err_wdev;
 	}
 
-	dev = alloc_netdev(0, "wlan%d", ether_setup);
+	dev = alloc_netdev(0, "wlan%d", NET_NAME_UNKNOWN, ether_setup);
 	if (!dev) {
 		dev_err(dmdev, "no memory for network device instance\n");
 		goto err_adapter;

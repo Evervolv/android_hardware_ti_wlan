@@ -3,7 +3,7 @@ config VIDEO_SAA7164
 	depends on m
 	depends on DVB_CORE && VIDEO_DEV && PCI && I2C
 	depends on I2C_ALGOBIT
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	select VIDEO_TUNER
 	select VIDEO_TVEEPROM
 	select VIDEOBUF_DVB

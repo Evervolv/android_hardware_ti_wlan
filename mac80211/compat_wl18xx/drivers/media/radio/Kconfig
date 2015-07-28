@@ -74,7 +74,6 @@ config USB_DSBR
 	  module will be called dsbr100.
 
 config RADIO_MAXIRADIO
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Guillemot MAXI Radio FM 2000 radio"
 	depends on m
 	depends on VIDEO_V4L2 && PCI
@@ -92,7 +91,6 @@ config RADIO_MAXIRADIO
 	  module will be called radio-maxiradio.
 
 config RADIO_SHARK
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Griffin radioSHARK USB radio receiver"
 	depends on m
 	depends on USB
@@ -232,7 +230,7 @@ config RADIO_WL1273
 	depends on I2C && VIDEO_V4L2
 	depends on MFD_CORE
 	depends on MFD_WL1273_CORE
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	---help---
 	  Choose Y here if you have this FM radio chip.
 

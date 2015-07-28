@@ -26,6 +26,16 @@ config VIDEO_FIXED_MINOR_RANGES
 
 	  When in doubt, say N.
 
+config VIDEO_PCI_SKELETON
+	tristate "Skeleton PCI V4L2 driver"
+	depends on m
+	depends on PCI && BUILD_DOCSRC
+	depends on VIDEO_V4L2 && VIDEOBUF2_CORE
+	depends on VIDEOBUF2_MEMOPS && VIDEOBUF2_DMA_CONTIG
+	---help---
+	  Enable build of the skeleton PCI driver, used as a reference
+	  when developing new drivers.
+
 # Used by drivers that need tuner.ko
 config VIDEO_TUNER
 	tristate
@@ -67,7 +77,7 @@ config VIDEOBUF_DVB
 
 # Used by drivers that need Videobuf2 modules
 config VIDEOBUF2_CORE
-	select BACKPORT_DMA_SHARED_BUFFER
+	select DMA_SHARED_BUFFER if !KERNEL_3_5
 	tristate
 	depends on m
 
@@ -81,14 +91,14 @@ config VIDEOBUF2_DMA_CONTIG
 	depends on HAS_DMA
 	select VIDEOBUF2_CORE
 	select VIDEOBUF2_MEMOPS
-	select BACKPORT_DMA_SHARED_BUFFER
+	select DMA_SHARED_BUFFER if !KERNEL_3_5
 
 config VIDEOBUF2_VMALLOC
 	tristate
 	depends on m
 	select VIDEOBUF2_CORE
 	select VIDEOBUF2_MEMOPS
-	select BACKPORT_DMA_SHARED_BUFFER
+	select DMA_SHARED_BUFFER if !KERNEL_3_5
 
 config VIDEOBUF2_DMA_SG
 	tristate
@@ -96,3 +106,8 @@ config VIDEOBUF2_DMA_SG
 	#depends on HAS_DMA
 	select VIDEOBUF2_CORE
 	select VIDEOBUF2_MEMOPS
+
+config VIDEOBUF2_DVB
+	tristate
+	depends on m
+	select VIDEOBUF2_CORE

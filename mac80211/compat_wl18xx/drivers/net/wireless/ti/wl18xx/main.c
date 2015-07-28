@@ -48,8 +48,6 @@
 #define WL18XX_RX_CHECKSUM_MASK      0x40
 
 static char *ht_mode_param = NULL;
-static int rx_mask_param[IEEE80211_HT_MCS_MASK_LEN];
-static int rx_mask_param_argc;
 static char *board_type_param = NULL;
 static bool checksum_param = false;
 static int num_rx_desc_param = -1;
@@ -424,6 +422,8 @@ static struct wlcore_conf wl18xx_conf = {
 		.num_probe_reqs			= 2,
 		.rssi_threshold			= -90,
 		.snr_threshold			= 0,
+		.num_short_intervals		= SCAN_MAX_SHORT_INTERVALS,
+		.long_interval			= 30000,
 	},
 	.ht = {
 		.rx_ba_win_size = 32,
@@ -922,7 +922,7 @@ static int wl18xx_pre_upload(struct wl1271 *wl)
 	if ((ret == IRQ_TYPE_LEVEL_LOW) || (ret == IRQ_TYPE_EDGE_FALLING)) {
 		wl1271_info("using inverted interrupt logic: %d", ret);
 		ret = wlcore_set_partition(wl,
-					  &wl->ptable[PART_TOP_PRCM_ELP_SOC]);
+					   &wl->ptable[PART_TOP_PRCM_ELP_SOC]);
 		if (ret < 0)
 			goto out;
 
@@ -1027,10 +1027,10 @@ static int wl18xx_boot(struct wl1271 *wl)
 		INACTIVE_STA_EVENT_ID |
 		CHANNEL_SWITCH_COMPLETE_EVENT_ID |
 		DFS_CHANNELS_CONFIG_COMPLETE_EVENT |
-		RX_BA_WIN_SIZE_CHANGE_EVENT_ID |
 		SMART_CONFIG_SYNC_EVENT_ID |
-		SMART_CONFIG_DECODE_EVENT_ID;
-;
+		SMART_CONFIG_DECODE_EVENT_ID |
+		RX_BA_WIN_SIZE_CHANGE_EVENT_ID |
+		TIME_SYNC_EVENT_ID;
 
 	wl->ap_event_mask = MAX_TX_FAILURE_EVENT_ID;
 
@@ -1162,6 +1162,11 @@ static int wl18xx_hw_init(struct wl1271 *wl)
 	if (ret < 0)
 		return ret;
 
+	/* set the dynamic fw traces bitmap */
+	ret = wl18xx_acx_dynamic_fw_traces(wl);
+	if (ret < 0)
+		return ret;
+
 	if (checksum_param) {
 		ret = wl18xx_acx_set_checksum_state(wl);
 		if (ret != 0)
@@ -1169,6 +1174,13 @@ static int wl18xx_hw_init(struct wl1271 *wl)
 	}
 
 	return ret;
+}
+
+static int wl18xx_init_vif(struct wl1271 *wl, struct wl12xx_vif *wlvif)
+{
+	return wlcore_cmd_generic_cfg(wl, wlvif,
+				      WLCORE_CFG_FEATURE_DIVERSITY_MODE,
+				      wl->diversity_mode, 0);
 }
 
 static void wl18xx_convert_fw_status(struct wl1271 *wl, void *raw_fw_status,
@@ -1286,9 +1298,8 @@ static u32 wl18xx_ap_get_mimo_wide_rate_mask(struct wl1271 *wl,
 		wl1271_debug(DEBUG_ACX, "using wide channel rate mask");
 
 		/* sanity check - we don't support this */
-		if (wlvif->band != IEEE80211_BAND_5GHZ)
-			wl1271_error("using 40Mhz AP in 2.4Ghz band -"
-				     "not officially supported");
+		if (WARN_ON(wlvif->band != IEEE80211_BAND_5GHZ))
+			return 0;
 
 		return CONF_TX_RATE_USE_WIDE_CHAN;
 	} else if (wl18xx_is_mimo_supported(wl) &&
@@ -1379,25 +1390,26 @@ out:
 }
 
 #define WL18XX_CONF_FILE_NAME "ti-connectivity/wl18xx-conf.bin"
-static int wl18xx_conf_init(struct wl1271 *wl, struct device *dev)
+
+static struct wlcore_conf_file *
+wl18xx_load_conf_file(struct device *dev, const struct firmware **_fw)
 {
-	struct wl18xx_priv *priv = wl->priv;
 	struct wlcore_conf_file *conf_file;
 	const struct firmware *fw;
 	int ret;
 
-	ret = request_firmware(&fw, WL18XX_CONF_FILE_NAME, dev);
+	ret = request_firmware(_fw, WL18XX_CONF_FILE_NAME, dev);
 	if (ret < 0) {
 		wl1271_error("could not get configuration binary %s: %d",
 			     WL18XX_CONF_FILE_NAME, ret);
-		goto out_fallback;
+		return NULL;
 	}
 
+	fw = *_fw;
 	if (fw->size != WL18XX_CONF_SIZE) {
 		wl1271_error("configuration binary file size is wrong, expected %zu got %zu",
 			     WL18XX_CONF_SIZE, fw->size);
-		ret = -EINVAL;
-		goto out;
+		goto out_release;
 	}
 
 	conf_file = (struct wlcore_conf_file *) fw->data;
@@ -1406,37 +1418,45 @@ static int wl18xx_conf_init(struct wl1271 *wl, struct device *dev)
 		wl1271_error("configuration binary file magic number mismatch, "
 			     "expected 0x%0x got 0x%0x", WL18XX_CONF_MAGIC,
 			     conf_file->header.magic);
-		ret = -EINVAL;
-		goto out;
+		goto out_release;
 	}
 
 	if (conf_file->header.version != cpu_to_le32(WL18XX_CONF_VERSION)) {
 		wl1271_error("configuration binary file version not supported, "
 			     "expected 0x%08x got 0x%08x",
 			     WL18XX_CONF_VERSION, conf_file->header.version);
-		ret = -EINVAL;
-		goto out;
+		goto out_release;
 	}
 
-	memcpy(&wl->conf, &conf_file->core, sizeof(wl18xx_conf));
-	memcpy(&priv->conf, &conf_file->priv, sizeof(priv->conf));
+	return conf_file;
 
-	goto out;
-
-out_fallback:
-	wl1271_warning("falling back to default config");
-
-	/* apply driver default configuration */
-	memcpy(&wl->conf, &wl18xx_conf, sizeof(wl18xx_conf));
-	/* apply default private configuration */
-	memcpy(&priv->conf, &wl18xx_default_priv_conf, sizeof(priv->conf));
-
-	/* For now we just fallback */
-	return 0;
-
-out:
+out_release:
 	release_firmware(fw);
-	return ret;
+	return NULL;
+}
+
+static int wl18xx_conf_init(struct wl1271 *wl, struct device *dev)
+{
+	struct wl18xx_priv *priv = wl->priv;
+	struct wlcore_conf_file *conf_file;
+	const struct firmware *fw;
+
+	conf_file = wl18xx_load_conf_file(dev, &fw);
+	if (conf_file) {
+		memcpy(&wl->conf, &conf_file->core, sizeof(wl18xx_conf));
+		memcpy(&priv->conf, &conf_file->priv, sizeof(priv->conf));
+		release_firmware(fw);
+	} else {
+		wl1271_warning("falling back to default config");
+
+		/* apply driver default configuration */
+		memcpy(&wl->conf, &wl18xx_conf, sizeof(wl18xx_conf));
+		/* apply default private configuration */
+		memcpy(&priv->conf, &wl18xx_default_priv_conf,
+		       sizeof(priv->conf));
+	}
+
+	return 0;
 }
 
 static int wl18xx_plt_init(struct wl1271 *wl)
@@ -1595,26 +1615,19 @@ static u32 wl18xx_pre_pkt_send(struct wl1271 *wl,
 }
 
 static void wl18xx_sta_rc_update(struct wl1271 *wl,
-				 struct wl12xx_vif *wlvif,
-				 struct ieee80211_sta *sta,
-				 u32 changed)
+				 struct wl12xx_vif *wlvif)
 {
-	bool wide = sta->bandwidth >= IEEE80211_STA_RX_BW_40;
+	bool wide = wlvif->rc_update_bw >= IEEE80211_STA_RX_BW_40;
 
 	wl1271_debug(DEBUG_MAC80211, "mac80211 sta_rc_update wide %d", wide);
 
-	if (!(changed & IEEE80211_RC_BW_CHANGED))
-		return;
-
-	mutex_lock(&wl->mutex);
-
 	/* sanity */
 	if (WARN_ON(wlvif->bss_type != BSS_TYPE_STA_BSS))
-		goto out;
+		return;
 
 	/* ignore the change before association */
 	if (!test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))
-		goto out;
+		return;
 
 	/*
 	 * If we started out as wide, we can change the operation mode. If we
@@ -1625,9 +1638,6 @@ static void wl18xx_sta_rc_update(struct wl1271 *wl,
 		wl18xx_acx_peer_ht_operation_mode(wl, wlvif->sta.hlid, wide);
 	else
 		ieee80211_connection_loss(wl12xx_wlvif_to_vif(wlvif));
-
-out:
-	mutex_unlock(&wl->mutex);
 }
 
 static int wl18xx_set_peer_cap(struct wl1271 *wl,
@@ -1714,6 +1724,7 @@ static struct wlcore_ops wl18xx_ops = {
 	.tx_immediate_compl = wl18xx_tx_immediate_completion,
 	.tx_delayed_compl = NULL,
 	.hw_init	= wl18xx_hw_init,
+	.init_vif	= wl18xx_init_vif,
 	.convert_fw_status = wl18xx_convert_fw_status,
 	.set_tx_desc_csum = wl18xx_set_tx_desc_csum,
 	.get_pg_ver	= wl18xx_get_pg_ver,
@@ -1742,6 +1753,8 @@ static struct wlcore_ops wl18xx_ops = {
 	.interrupt_notify = wl18xx_acx_interrupt_notify_config,
 	.rx_ba_filter	= wl18xx_acx_rx_ba_filter,
 	.ap_sleep	= wl18xx_acx_ap_sleep,
+	.set_cac	= wl18xx_cmd_set_cac,
+	.dfs_master_restart	= wl18xx_cmd_dfs_master_restart,
 };
 
 /* HT cap appropriate for wide channels in 2Ghz */
@@ -1804,7 +1817,7 @@ static struct ieee80211_sta_ht_cap wl18xx_mimo_ht_cap_2ghz = {
 
 static const struct ieee80211_iface_limit wl18xx_iface_limits[] = {
 	{
-		.max = 3,
+		.max = 2,
 		.types = BIT(NL80211_IFTYPE_STATION),
 	},
 	{
@@ -1813,12 +1826,58 @@ static const struct ieee80211_iface_limit wl18xx_iface_limits[] = {
 			 BIT(NL80211_IFTYPE_P2P_GO) |
 			 BIT(NL80211_IFTYPE_P2P_CLIENT),
 	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
+	},
 };
 
 static const struct ieee80211_iface_limit wl18xx_iface_ap_limits[] = {
 	{
 		.max = 2,
 		.types = BIT(NL80211_IFTYPE_AP),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
+	},
+};
+
+static const struct ieee80211_iface_limit wl18xx_iface_ap_cl_limits[] = {
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_STATION),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_AP),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_CLIENT),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
+	},
+};
+
+static const struct ieee80211_iface_limit wl18xx_iface_ap_go_limits[] = {
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_STATION),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_AP),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_GO),
+	},
+	{
+		.max = 1,
+		.types = BIT(NL80211_IFTYPE_P2P_DEVICE),
 	},
 };
 
@@ -1829,10 +1888,6 @@ wl18xx_iface_combinations[] = {
 		.limits = wl18xx_iface_limits,
 		.n_limits = ARRAY_SIZE(wl18xx_iface_limits),
 		.num_different_channels = 2,
-		.radar_detect_widths =	BIT(NL80211_CHAN_NO_HT) |
-					BIT(NL80211_CHAN_HT20) |
-					BIT(NL80211_CHAN_HT40MINUS) |
-					BIT(NL80211_CHAN_HT40PLUS),
 	},
 	{
 		.max_interfaces = 2,
@@ -1843,6 +1898,28 @@ wl18xx_iface_combinations[] = {
 					BIT(NL80211_CHAN_HT20) |
 					BIT(NL80211_CHAN_HT40MINUS) |
 					BIT(NL80211_CHAN_HT40PLUS),
+	},
+	{
+		.max_interfaces = 3,
+		.limits = wl18xx_iface_ap_cl_limits,
+		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_cl_limits),
+		.num_different_channels = 2,
+	},
+	{
+		.max_interfaces = 3,
+		.limits = wl18xx_iface_ap_cl_limits,
+		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_cl_limits),
+		.num_different_channels = 1,
+		.radar_detect_widths =  BIT(NL80211_CHAN_NO_HT) |
+					BIT(NL80211_CHAN_HT20) |
+					BIT(NL80211_CHAN_HT40MINUS) |
+					BIT(NL80211_CHAN_HT40PLUS),
+	},
+	{
+		.max_interfaces = 3,
+		.limits = wl18xx_iface_ap_go_limits,
+		.n_limits = ARRAY_SIZE(wl18xx_iface_ap_go_limits),
+		.num_different_channels = 1,
 	}
 };
 
@@ -1850,7 +1927,6 @@ static int wl18xx_setup(struct wl1271 *wl)
 {
 	struct wl18xx_priv *priv = wl->priv;
 	int ret;
-	int i;
 
 	BUILD_BUG_ON(WL18XX_MAX_LINKS > WLCORE_MAX_LINKS);
 	BUILD_BUG_ON(WL18XX_MAX_AP_STATIONS > WL18XX_MAX_LINKS);
@@ -1963,18 +2039,8 @@ static int wl18xx_setup(struct wl1271 *wl)
 				  &wl18xx_siso20_ht_cap);
 	}
 
-	/* modify supported MCS rates in case the rx_mask param is used */
-	for (i = 0; i < rx_mask_param_argc; i++) {
-		wl->ht_cap[IEEE80211_BAND_2GHZ].mcs.rx_mask[i] =
-						rx_mask_param[i] & 0xff;
-		wl->ht_cap[IEEE80211_BAND_5GHZ].mcs.rx_mask[i] =
-						rx_mask_param[i] & 0xff;
-	}
-
-	if (!checksum_param) {
+	if (!checksum_param)
 		wl18xx_ops.set_rx_csum = NULL;
-		wl18xx_ops.init_vif = NULL;
-	}
 
 	/* Enable 11a Band only if we have 5G antennas */
 	wl->enable_11a = (priv->conf.phy.number_of_assembled_ant5 != 0);
@@ -1990,8 +2056,7 @@ static int wl18xx_probe(struct platform_device *pdev)
 
 	hw = wlcore_alloc_hw(sizeof(struct wl18xx_priv),
 			     WL18XX_AGGR_BUFFER_SIZE,
-			     sizeof(struct wl18xx_event_mailbox),
-			     WL18XX_NUM_TX_DESCRIPTORS);
+			     sizeof(struct wl18xx_event_mailbox));
 	if (IS_ERR(hw)) {
 		wl1271_error("can't allocate hw");
 		ret = PTR_ERR(hw);
@@ -2025,18 +2090,12 @@ static struct platform_driver wl18xx_driver = {
 	.id_table	= wl18xx_id_table,
 	.driver = {
 		.name	= "wl18xx_driver",
-		.owner	= THIS_MODULE,
 	}
 };
 
 module_platform_driver(wl18xx_driver);
 module_param_named(ht_mode, ht_mode_param, charp, S_IRUSR);
 MODULE_PARM_DESC(ht_mode, "Force HT mode: wide or siso20");
-
-module_param_array_named(rx_mask, rx_mask_param, int, &rx_mask_param_argc,
-			 S_IRUSR);
-MODULE_PARM_DESC(rx_mask, "Allow modifying the mcs supported rates. "
-			  "For example: rx_mask=0xff,0xff,0,0,0,0,0,0,0,0");
 
 module_param_named(board_type, board_type_param, charp, S_IRUSR);
 MODULE_PARM_DESC(board_type, "Board type: fpga, hdk (default), evb, com8 or "

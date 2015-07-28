@@ -31,8 +31,6 @@ struct acx_header;
 
 int wl1271_cmd_send(struct wl1271 *wl, u16 id, void *buf, size_t len,
 		    size_t res_len);
-int wlcore_cmd_send_failsafe(struct wl1271 *wl, u16 id, void *buf, size_t len,
-			     size_t res_len, unsigned long valid_rets);
 int wl12xx_cmd_role_enable(struct wl1271 *wl, u8 *addr, u8 role_type,
 			   u8 *role_id);
 int wl12xx_cmd_role_disable(struct wl1271 *wl, u8 *role_id);
@@ -64,7 +62,8 @@ int wl1271_cmd_build_ps_poll(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 int wl12xx_cmd_build_probe_req(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 			       u8 role_id, u8 band,
 			       const u8 *ssid, size_t ssid_len,
-			       const u8 *ie, size_t ie_len, bool sched_scan);
+			       const u8 *ie, size_t ie_len, const u8 *common_ie,
+			       size_t common_ie_len, bool sched_scan);
 struct sk_buff *wl1271_cmd_build_ap_probe_req(struct wl1271 *wl,
 					      struct wl12xx_vif *wlvif,
 					      struct sk_buff *skb);
@@ -93,9 +92,8 @@ int wl12xx_cmd_remove_peer(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 void wlcore_set_pending_regdomain_ch(struct wl1271 *wl, u16 channel,
 				     enum ieee80211_band band);
 int wlcore_cmd_regdomain_config_locked(struct wl1271 *wl);
-int wlcore_set_cac(struct wl1271 *wl, struct wl12xx_vif *wlvif, bool start);
-int wlcore_radar_detection_debug(struct wl1271 *wl, u8 channel);
-int wlcore_cmd_dfs_master_restart(struct wl1271 *wl, struct wl12xx_vif *wlvif);
+int wlcore_cmd_generic_cfg(struct wl1271 *wl, struct wl12xx_vif *wlvif,
+			   u8 feature, u8 enable, u8 value);
 int wl12xx_cmd_config_fwlog(struct wl1271 *wl);
 int wl12xx_cmd_start_fwlog(struct wl1271 *wl);
 int wl12xx_cmd_stop_fwlog(struct wl1271 *wl);
@@ -109,6 +107,7 @@ int wl12xx_allocate_link(struct wl1271 *wl, struct wl12xx_vif *wlvif,
 void wl12xx_free_link(struct wl1271 *wl, struct wl12xx_vif *wlvif, u8 *hlid);
 int wlcore_cmd_wait_for_event_or_timeout(struct wl1271 *wl,
 					 u32 mask, bool *timeout);
+u8 wlcore_get_native_channel_type(u8 nl_channel_type);
 
 enum wl1271_commands {
 	CMD_INTERROGATE	= 1, /* use this to read information elements */
@@ -651,31 +650,22 @@ struct wl12xx_cmd_regdomain_dfs_config {
 
 	__le32 ch_bit_map1;
 	__le32 ch_bit_map2;
-} __packed;
-
-/* TODO: 18xx only */
-struct wlcore_cmd_dfs_radar_detection_cmd {
-	struct wl1271_cmd_header header;
-
-	u8 channel;
+	u8 dfs_region;
 	u8 padding[3];
 } __packed;
 
-struct wlcore_cmd_dfs_master_restart {
+enum wlcore_generic_cfg_feature {
+	WLCORE_CFG_FEATURE_DIVERSITY_MODE = 1,
+	WLCORE_CFG_FEATURE_RADAR_DEBUG = 2,
+};
+
+struct wlcore_cmd_generic_cfg {
 	struct wl1271_cmd_header header;
 
 	u8 role_id;
-	u8 padding[3];
-} __packed;
-
-/* cac_start and cac_stop share the same params */
-struct wlcore_cmd_cac_start {
-	struct wl1271_cmd_header header;
-
-	u8 role_id;
-	u8 channel;
-	u8 band;
-	u8 bandwidth;
+	u8 feature;
+	u8 enable;
+	u8 value;
 } __packed;
 
 struct wl12xx_cmd_config_fwlog {

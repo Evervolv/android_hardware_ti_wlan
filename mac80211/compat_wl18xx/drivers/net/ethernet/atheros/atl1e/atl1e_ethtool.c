@@ -57,8 +57,8 @@ static int atl1e_get_settings(struct net_device *netdev,
 		else
 			ecmd->duplex = DUPLEX_HALF;
 	} else {
-		ethtool_cmd_speed_set(ecmd, -1);
-		ecmd->duplex = -1;
+		ethtool_cmd_speed_set(ecmd, SPEED_UNKNOWN);
+		ecmd->duplex = DUPLEX_UNKNOWN;
 	}
 
 	ecmd->autoneg = AUTONEG_ENABLE;
@@ -384,14 +384,9 @@ static const struct ethtool_ops atl1e_ethtool_ops = {
 	.get_eeprom_len         = atl1e_get_eeprom_len,
 	.get_eeprom             = atl1e_get_eeprom,
 	.set_eeprom             = atl1e_set_eeprom,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-	.set_tx_csum            = ethtool_op_set_tx_hw_csum,
-	.set_sg                 = ethtool_op_set_sg,
-	.set_tso                = ethtool_op_set_tso,
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 };
 
 void atl1e_set_ethtool_ops(struct net_device *netdev)
 {
-	SET_ETHTOOL_OPS(netdev, &atl1e_ethtool_ops);
+	netdev->ethtool_ops = &atl1e_ethtool_ops;
 }

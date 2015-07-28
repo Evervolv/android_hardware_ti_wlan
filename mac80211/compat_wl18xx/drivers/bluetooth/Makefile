@@ -15,10 +15,12 @@ obj-$(CPTCFG_BT_HCIBTUART)	+= btuart_cs.o
 obj-$(CPTCFG_BT_HCIBTUSB)	+= btusb.o
 obj-$(CPTCFG_BT_HCIBTSDIO)	+= btsdio.o
 
+obj-$(CPTCFG_BT_INTEL)		+= btintel.o
 obj-$(CPTCFG_BT_ATH3K)		+= ath3k.o
 obj-$(CPTCFG_BT_MRVL)		+= btmrvl.o
 obj-$(CPTCFG_BT_MRVL_SDIO)	+= btmrvl_sdio.o
 obj-$(CPTCFG_BT_WILINK)		+= btwilink.o
+obj-$(CPTCFG_BT_BCM)		+= btbcm.o
 
 btmrvl-y			:= btmrvl_main.o
 btmrvl-$(CONFIG_DEBUG_FS)	+= btmrvl_debugfs.o
@@ -29,6 +31,8 @@ hci_uart-$(CPTCFG_BT_HCIUART_BCSP)	+= hci_bcsp.o
 hci_uart-$(CPTCFG_BT_HCIUART_LL)	+= hci_ll.o
 hci_uart-$(CPTCFG_BT_HCIUART_ATH3K)	+= hci_ath.o
 hci_uart-$(CPTCFG_BT_HCIUART_3WIRE)	+= hci_h5.o
+hci_uart-$(CPTCFG_BT_HCIUART_INTEL)	+= hci_intel.o
+hci_uart-$(CPTCFG_BT_HCIUART_BCM)	+= hci_bcm.o
 hci_uart-objs				:= $(hci_uart-y)
 
 ccflags-y += -D__CHECK_ENDIAN__

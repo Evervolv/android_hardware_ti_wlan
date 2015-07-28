@@ -10,7 +10,6 @@ config CW1200
 if CW1200
 
 config CW1200_WLAN_SDIO
-	depends on !BACKPORT_KERNEL_2_6_32
 	tristate "Support SDIO platforms"
 	depends on m
 	depends on CW1200 && MMC
@@ -23,7 +22,6 @@ config CW1200_WLAN_SDIO
 	  in your board setup file.
 
 config CW1200_WLAN_SPI
-	depends on !BACKPORT_KERNEL_2_6_35
 	tristate "Support SPI platforms"
 	depends on m
 	depends on CW1200 && SPI

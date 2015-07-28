@@ -1,7 +1,6 @@
 comment "soc_camera sensor drivers"
 
 config SOC_CAMERA_IMX074
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "imx074 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -9,7 +8,6 @@ config SOC_CAMERA_IMX074
 	  This driver supports IMX074 cameras from Sony
 
 config SOC_CAMERA_MT9M001
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "mt9m001 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -18,7 +16,6 @@ config SOC_CAMERA_MT9M001
 	  and colour models.
 
 config SOC_CAMERA_MT9M111
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "mt9m111, mt9m112 and mt9m131 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -27,7 +24,6 @@ config SOC_CAMERA_MT9M111
 	  Micron/Aptina
 
 config SOC_CAMERA_MT9T031
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "mt9t031 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -35,7 +31,6 @@ config SOC_CAMERA_MT9T031
 	  This driver supports MT9T031 cameras from Micron.
 
 config SOC_CAMERA_MT9T112
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "mt9t112 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -43,7 +38,6 @@ config SOC_CAMERA_MT9T112
 	  This driver supports MT9T112 cameras from Aptina.
 
 config SOC_CAMERA_MT9V022
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "mt9v022 and mt9v024 support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -51,7 +45,7 @@ config SOC_CAMERA_MT9V022
 	  This driver supports MT9V022 cameras from Micron
 
 config SOC_CAMERA_OV2640
-	depends on !BACKPORT_KERNEL_3_4
+	depends on !KERNEL_3_17
 	tristate "ov2640 camera support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -59,7 +53,6 @@ config SOC_CAMERA_OV2640
 	  This is a ov2640 camera driver
 
 config SOC_CAMERA_OV5642
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "ov5642 camera support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -67,7 +60,6 @@ config SOC_CAMERA_OV5642
 	  This is a V4L2 camera driver for the OmniVision OV5642 sensor
 
 config SOC_CAMERA_OV6650
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "ov6650 sensor support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -75,7 +67,6 @@ config SOC_CAMERA_OV6650
 	  This is a V4L2 SoC camera driver for the OmniVision OV6650 sensor
 
 config SOC_CAMERA_OV772X
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "ov772x camera support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -83,7 +74,6 @@ config SOC_CAMERA_OV772X
 	  This is a ov772x camera driver
 
 config SOC_CAMERA_OV9640
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "ov9640 camera support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -91,7 +81,6 @@ config SOC_CAMERA_OV9640
 	  This is a ov9640 camera driver
 
 config SOC_CAMERA_OV9740
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "ov9740 camera support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -99,7 +88,6 @@ config SOC_CAMERA_OV9740
 	  This is a ov9740 camera driver
 
 config SOC_CAMERA_RJ54N1
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "rj54n1cb0c support"
 	depends on m
 	depends on SOC_CAMERA && I2C
@@ -107,7 +95,6 @@ config SOC_CAMERA_RJ54N1
 	  This is a rj54n1cb0c video driver
 
 config SOC_CAMERA_TW9910
-	depends on !BACKPORT_KERNEL_3_4
 	tristate "tw9910 support"
 	depends on m
 	depends on SOC_CAMERA && I2C

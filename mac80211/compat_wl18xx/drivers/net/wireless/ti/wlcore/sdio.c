@@ -31,7 +31,6 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/host.h>
 #include <linux/gpio.h>
-#include <linux/wl12xx.h>
 #include <linux/pm_runtime.h>
 #include <linux/printk.h>
 #include <linux/of.h>
@@ -217,112 +216,52 @@ static struct wl1271_if_operations sdio_ops = {
 };
 
 #ifdef CONFIG_OF
-/* backport dt parsing function from upstream */
-static struct wl12xx_platform_data *wlcore_probe_of(struct device *dev)
+static const struct of_device_id wlcore_sdio_of_match_table[] = {
+	{ .compatible = "ti,wl1271" },
+	{ .compatible = "ti,wl1273" },
+	{ .compatible = "ti,wl1281" },
+	{ .compatible = "ti,wl1283" },
+	{ .compatible = "ti,wl1801" },
+	{ .compatible = "ti,wl1805" },
+	{ .compatible = "ti,wl1807" },
+	{ .compatible = "ti,wl1831" },
+	{ .compatible = "ti,wl1835" },
+	{ .compatible = "ti,wl1837" },
+	{ }
+};
+
+static int wlcore_probe_of(struct device *dev, int *irq,
+			   struct wlcore_platdev_data *pdev_data)
 {
 	struct device_node *np = dev->of_node;
-	struct wl12xx_platform_data *pdata;
-	bool need_put_node = false;
 
-	if (!np || !of_device_is_compatible(np, "ti,wlcore")) {
-		np = of_find_compatible_node(NULL, NULL, "ti,wlcore");
-		if (!np) {
-			dev_err(dev, "No platform data set\n");
-			return NULL;
-		}
-		need_put_node = true;
-	}
+	np = of_find_compatible_node(NULL, NULL, "ti,wl1835"); // TODO - Why do we need to add this when using backport to 3.10?
 
-	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		dev_err(dev, "Can't allocate platform data\n");
-		goto err;
-	}
+	if (!np || !of_match_node(wlcore_sdio_of_match_table, np))
+		return -ENODATA;
 
-	pdata->irq = irq_of_parse_and_map(np, 0);
-	if (!pdata->irq) {
+	*irq = irq_of_parse_and_map(np, 0);
+	if (!*irq) {
 		dev_err(dev, "No irq in platform data\n");
-		goto err;
+		kfree(pdev_data);
+		return -EINVAL;
 	}
 
-	/* Optional fields */
-	of_property_read_u32(np, "board-ref-clock", &pdata->board_ref_clock);
-	of_property_read_u32(np, "board-tcxo-clock", &pdata->board_tcxo_clock);
-	of_property_read_u32(np, "platform-quirks", &pdata->platform_quirks);
+	/* optional clock frequency params */
+	of_property_read_u32(np, "ref-clock-frequency",
+			     &pdev_data->ref_clock_freq);
+	of_property_read_u32(np, "tcxo-clock-frequency",
+			     &pdev_data->tcxo_clock_freq);
 
-	return pdata;
-err:
-	if (need_put_node)
-		of_node_put(np);
-	kfree(pdata);
-	return NULL;
+	return 0;
+}
+#else
+static int wlcore_probe_of(struct device *dev, int *irq,
+			   struct wlcore_platdev_data *pdev_data)
+{
+	return -ENODATA;
 }
 #endif
-
-static const struct of_device_id wlcore_of_match[] = {
-	{
-		.compatible = "wlcore",
-	},
-	{}
-};
-MODULE_DEVICE_TABLE(of, wlcore_of_match);
-
-static struct wl12xx_platform_data *get_platform_data(struct device *dev)
-{
-	struct wl12xx_platform_data *pdata;
-	struct device_node __maybe_unused *np;
-
-	pdata = wl12xx_get_platform_data();
-	if (!IS_ERR(pdata))
-		return kmemdup(pdata, sizeof(*pdata), GFP_KERNEL);
-
-#ifdef CONFIG_OF
-	/* first, try looking for "upstream" dt */
-	pdata = wlcore_probe_of(dev);
-	if (pdata)
-		return pdata;
-
-	/* if not found, look for our deprecated dt */
-	np = of_find_matching_node(NULL, wlcore_of_match);
-	if (!np) {
-		dev_err(dev, "No platform data set\n");
-		return NULL;
-	}
-
-	pdata = kzalloc(sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		dev_err(dev, "Can't allocate platform data\n");
-		return NULL;
-	}
-
-	if (of_property_read_u32(np, "irq", &pdata->irq)) {
-		u32 gpio;
-
-		if (!of_property_read_u32(np, "gpio", &gpio) &&
-		    !gpio_request_one(gpio, GPIOF_IN, "wlcore_irq"))
-			pdata->gpio = gpio;
-	}
-
-	/* Optional fields */
-	pdata->use_eeprom = of_property_read_bool(np, "use-eeprom");
-	of_property_read_u32(np, "board-ref-clock", &pdata->board_ref_clock);
-	of_property_read_u32(np, "board-tcxo-clock", &pdata->board_tcxo_clock);
-	of_property_read_u32(np, "platform-quirks", &pdata->platform_quirks);
-#endif
-
-	if (IS_ERR(pdata))
-		return NULL;
-
-	return pdata;
-}
-
-static void del_platform_data(struct wl12xx_platform_data *pdata)
-{
-	if (!pdata->irq && pdata->gpio)
-		gpio_free(pdata->gpio);
-
-	kfree(pdata);
-}
 
 static int wl1271_probe(struct sdio_func *func,
 				  const struct sdio_device_id *id)
@@ -332,12 +271,14 @@ static int wl1271_probe(struct sdio_func *func,
 	struct resource res[1];
 	mmc_pm_flag_t mmcflags;
 	int ret = -ENOMEM;
+	int irq;
 	const char *chip_family;
 
 	/* We are only able to handle the wlan function */
 	if (func->num != 0x02)
 		return -ENODEV;
 
+	memset(&pdev_data, 0x00, sizeof(pdev_data));
 	pdev_data.if_ops = &sdio_ops;
 
 	glue = kzalloc(sizeof(*glue), GFP_KERNEL);
@@ -354,8 +295,7 @@ static int wl1271_probe(struct sdio_func *func,
 	/* Use block mode for transferring over one block size of data */
 	func->card->quirks |= MMC_QUIRK_BLKSZ_FOR_BYTE_MODE;
 
-	pdev_data.pdata = get_platform_data(&func->dev);
-	if (!pdev_data.pdata)
+	if (wlcore_probe_of(&func->dev, &irq, &pdev_data))
 		goto out_free_glue;
 
 	/* if sdio can keep power while host is suspended, enable wow */
@@ -363,7 +303,7 @@ static int wl1271_probe(struct sdio_func *func,
 	dev_dbg(glue->dev, "sdio PM caps = 0x%x\n", mmcflags);
 
 	if (mmcflags & MMC_PM_KEEP_POWER)
-		pdev_data.pdata->pwr_in_suspend = true;
+		pdev_data.pwr_in_suspend = true;
 
 	sdio_set_drvdata(func, glue);
 
@@ -385,16 +325,16 @@ static int wl1271_probe(struct sdio_func *func,
 	if (!glue->core) {
 		dev_err(glue->dev, "can't allocate platform_device");
 		ret = -ENOMEM;
-		goto out_free_pdata;
+		goto out_free_glue;
 	}
 
 	glue->core->dev.parent = &func->dev;
 
 	memset(res, 0x00, sizeof(res));
 
-	res[0].start = pdev_data.pdata->irq ?:
-		       gpio_to_irq(pdev_data.pdata->gpio);
-	res[0].flags = IORESOURCE_IRQ;
+	res[0].start = irq;
+	res[0].flags = IORESOURCE_IRQ |
+		       irqd_get_trigger_type(irq_get_irq_data(irq));
 	res[0].name = "irq";
 
 	ret = platform_device_add_resources(glue->core, res, ARRAY_SIZE(res));
@@ -420,9 +360,6 @@ static int wl1271_probe(struct sdio_func *func,
 out_dev_put:
 	platform_device_put(glue->core);
 
-out_free_pdata:
-	del_platform_data(pdev_data.pdata);
-
 out_free_glue:
 	kfree(glue);
 
@@ -433,14 +370,11 @@ out:
 static void wl1271_remove(struct sdio_func *func)
 {
 	struct wl12xx_sdio_glue *glue = sdio_get_drvdata(func);
-	struct wlcore_platdev_data *pdev_data = glue->core->dev.platform_data;
-	struct wl12xx_platform_data *pdata = pdev_data->pdata;
 
 	/* Undo decrement done above in wl1271_probe */
 	pm_runtime_get_noresume(&func->dev);
 
 	platform_device_unregister(glue->core);
-	del_platform_data(pdata);
 	kfree(glue);
 }
 

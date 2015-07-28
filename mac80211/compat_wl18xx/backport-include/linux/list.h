@@ -17,7 +17,9 @@
 
 #undef hlist_entry_safe
 #define hlist_entry_safe(ptr, type, member) \
-	(ptr) ? hlist_entry(ptr, type, member) : NULL
+	({ typeof(ptr) ____ptr = (ptr); \
+	   ____ptr ? hlist_entry(____ptr, type, member) : NULL; \
+	})
 
 #define hlist_for_each_entry4(tpos, pos, head, member)			\
 	for (pos = (head)->first;					\
@@ -50,71 +52,6 @@
 
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
-static inline int list_is_singular(const struct list_head *head)
-{
-	return !list_empty(head) && (head->next == head->prev);
-}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)
-static inline void __list_cut_position(struct list_head *list,
-		struct list_head *head, struct list_head *entry)
-{
-	struct list_head *new_first = entry->next;
-	list->next = head->next;
-	list->next->prev = list;
-	list->prev = entry;
-	entry->next = list;
-	head->next = new_first;
-	new_first->prev = head;
-}
-
-static inline void list_cut_position(struct list_head *list,
-		struct list_head *head, struct list_head *entry)
-{
-	if (list_empty(head))
-		return;
-	if (list_is_singular(head) &&
-		(head->next != entry && head != entry))
-		return;
-	if (entry == head)
-		INIT_LIST_HEAD(list);
-	else
-		__list_cut_position(list, head, entry);
-}
-
-static inline void __compat_list_splice_new_27(const struct list_head *list,
-				 struct list_head *prev,
-				 struct list_head *next)
-{
-	struct list_head *first = list->next;
-	struct list_head *last = list->prev;
-
-	first->prev = prev;
-	prev->next = first;
-
-	last->next = next;
-	next->prev = last;
-}
-
-static inline void list_splice_tail(struct list_head *list,
-				struct list_head *head)
-{
-	if (!list_empty(list))
-		__compat_list_splice_new_27(list, head->prev, head);
-}
-
-static inline void list_splice_tail_init(struct list_head *list,
-					 struct list_head *head)
-{
-	if (!list_empty(list)) {
-		__compat_list_splice_new_27(list, head->prev, head);
-		INIT_LIST_HEAD(list);
-	}
-}
-#endif
-
 #ifndef list_first_entry_or_null
 /**
  * list_first_entry_or_null - get the first element from a list
@@ -127,5 +64,28 @@ static inline void list_splice_tail_init(struct list_head *list,
 #define list_first_entry_or_null(ptr, type, member) \
 	(!list_empty(ptr) ? list_first_entry(ptr, type, member) : NULL)
 #endif /* list_first_entry_or_null */
+
+#ifndef list_next_entry
+/**
+ * list_next_entry - get the next element in list
+ * @pos:	the type * to cursor
+ * @member:	the name of the list_struct within the struct.
+ */
+#define list_next_entry(pos, member) \
+	list_entry((pos)->member.next, typeof(*(pos)), member)
+#endif /* list_next_entry */
+
+#ifndef list_last_entry
+/**
+ * list_last_entry - get the last element from a list
+ * @ptr:	the list head to take the element from.
+ * @type:	the type of the struct this is embedded in.
+ * @member:	the name of the list_struct within the struct.
+ *
+ * Note, that list is expected to be not empty.
+ */
+#define list_last_entry(ptr, type, member) \
+	list_entry((ptr)->prev, type, member)
+#endif
 
 #endif /* __BACKPORT_LIST_H */

@@ -333,37 +333,24 @@ bool hid_ignore(struct hid_device *hdev)
 			return true;
 		break;
 	case USB_VENDOR_ID_JESS:
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 		if (hdev->product == USB_DEVICE_ID_JESS_YUREX &&
 				hdev->type == HID_TYPE_USBNONE)
 			return true;
-#else
-		if (hdev->product == USB_DEVICE_ID_JESS_YUREX)
-			return true;
-#endif
 		break;
 	case USB_VENDOR_ID_DWAV:
 		/* These are handled by usbtouchscreen. hdev->type is probably
 		 * HID_TYPE_USBNONE, but we say !HID_TYPE_USBMOUSE to match
 		 * usbtouchscreen. */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 		if ((hdev->product == USB_DEVICE_ID_EGALAX_TOUCHCONTROLLER ||
 		     hdev->product == USB_DEVICE_ID_DWAV_TOUCHCONTROLLER) &&
 		    hdev->type != HID_TYPE_USBMOUSE)
 			return true;
-#else
-		if (hdev->product == USB_DEVICE_ID_EGALAX_TOUCHCONTROLLER ||
-		     hdev->product == USB_DEVICE_ID_DWAV_TOUCHCONTROLLER)
-			return true;
-#endif
 		break;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 	if (hdev->type == HID_TYPE_USBMOUSE &&
 			hid_match_id(hdev, hid_mouse_ignore_list))
 		return true;
-#endif
 
 	return !!hid_match_id(hdev, hid_ignore_list);
 }
@@ -456,34 +443,6 @@ void prandom_bytes(void *buf, int bytes)
 EXPORT_SYMBOL_GPL(prandom_bytes);
 
 #ifdef CONFIG_OF
-/**
- * of_find_property_value_of_size
- *
- * @np:		device node from which the property value is to be read.
- * @propname:	name of the property to be searched.
- * @len:	requested length of property value
- *
- * Search for a property in a device node and valid the requested size.
- * Returns the property value on success, -EINVAL if the property does not
- *  exist, -ENODATA if property does not have a value, and -EOVERFLOW if the
- * property data isn't large enough.
- *
- */
-static void *of_find_property_value_of_size(const struct device_node *np,
-			const char *propname, u32 len)
-{
-	struct property *prop = of_find_property(np, propname, NULL);
-
-	if (!prop)
-		return ERR_PTR(-EINVAL);
-	if (!prop->value)
-		return ERR_PTR(-ENODATA);
-	if (len > prop->length)
-		return ERR_PTR(-EOVERFLOW);
-
-	return prop->value;
-}
-
 /**
  * of_property_read_u8_array - Find and read an array of u8 from a property.
  *

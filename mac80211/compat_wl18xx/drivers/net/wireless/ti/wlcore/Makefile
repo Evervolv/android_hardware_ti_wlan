@@ -1,5 +1,5 @@
 wlcore-objs		= main.o cmd.o io.o event.o tx.o rx.o ps.o acx.o \
-			  boot.o init.o debugfs.o scan.o sysfs.o
+			  boot.o init.o debugfs.o scan.o sysfs.o vendor_cmd.o
 
 # use special params for the compat case
 ifneq ($(KLIB_BUILD),)

@@ -56,8 +56,8 @@ static int atl1c_get_settings(struct net_device *netdev,
 		else
 			ecmd->duplex = DUPLEX_HALF;
 	} else {
-		ethtool_cmd_speed_set(ecmd, -1);
-		ecmd->duplex = -1;
+		ethtool_cmd_speed_set(ecmd, SPEED_UNKNOWN);
+		ecmd->duplex = DUPLEX_UNKNOWN;
 	}
 
 	ecmd->autoneg = AUTONEG_ENABLE;
@@ -113,13 +113,6 @@ static int atl1c_set_settings(struct net_device *netdev,
 	clear_bit(__AT_RESETTING, &adapter->flags);
 	return 0;
 }
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-static u32 atl1c_get_tx_csum(struct net_device *netdev)
-{
-	return (netdev->features & NETIF_F_HW_CSUM) != 0;
-}
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 
 static u32 atl1c_get_msglevel(struct net_device *netdev)
 {
@@ -308,14 +301,9 @@ static const struct ethtool_ops atl1c_ethtool_ops = {
 	.get_link               = ethtool_op_get_link,
 	.get_eeprom_len         = atl1c_get_eeprom_len,
 	.get_eeprom             = atl1c_get_eeprom,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-	.get_tx_csum            = atl1c_get_tx_csum,
-	.get_sg                 = ethtool_op_get_sg,
-	.set_sg                 = ethtool_op_set_sg,
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 };
 
 void atl1c_set_ethtool_ops(struct net_device *netdev)
 {
-	SET_ETHTOOL_OPS(netdev, &atl1c_ethtool_ops);
+	netdev->ethtool_ops = &atl1c_ethtool_ops;
 }

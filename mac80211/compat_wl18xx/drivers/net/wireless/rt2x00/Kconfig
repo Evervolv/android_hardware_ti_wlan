@@ -256,17 +256,17 @@ config RT2X00_LIB_USB
 config RT2X00_LIB
 	tristate
 	depends on m
-	select BACKPORT_AVERAGE
+	select BPAUTO_AVERAGE
 
 config RT2X00_LIB_FIRMWARE
-	boolean
-	select BACKPORT_FW_LOADER
+	bool
+	depends on FW_LOADER
 
 config RT2X00_LIB_CRYPTO
-	boolean
+	bool
 
 config RT2X00_LIB_LEDS
-	boolean
+	bool
 	default y if (RT2X00_LIB=y && LEDS_CLASS=y) || (RT2X00_LIB=m && LEDS_CLASS!=n)
 
 config RT2X00_LIB_DEBUGFS

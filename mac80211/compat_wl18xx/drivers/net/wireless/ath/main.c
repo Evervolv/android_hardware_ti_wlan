@@ -20,6 +20,7 @@
 #include <linux/module.h>
 
 #include "ath.h"
+#include "trace.h"
 
 MODULE_AUTHOR("Atheros Communications");
 MODULE_DESCRIPTION("Shared library for Atheros wireless LAN cards.");
@@ -67,7 +68,6 @@ bool ath_is_mybeacon(struct ath_common *common, struct ieee80211_hdr *hdr)
 }
 EXPORT_SYMBOL(ath_is_mybeacon);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 void ath_printk(const char *level, const struct ath_common* common,
 		const char *fmt, ...)
 {
@@ -79,32 +79,14 @@ void ath_printk(const char *level, const struct ath_common* common,
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	if (common && common->hw && common->hw->wiphy)
+	if (common && common->hw && common->hw->wiphy) {
 		printk("%sath: %s: %pV",
 		       level, wiphy_name(common->hw->wiphy), &vaf);
-	else
+		trace_ath_log(common->hw->wiphy, &vaf);
+	} else {
 		printk("%sath: %pV", level, &vaf);
+	}
 
 	va_end(args);
 }
-#else
-void ath_printk(const char *level, const struct ath_common* common,
-		const char *fmt, ...)
-{
-	va_list args;
-
-	va_start(args, fmt);
-
-	if (common && common->hw && common->hw->wiphy)
-		printk("%sath: %s: ",
-		       level, wiphy_name(common->hw->wiphy));
-	else
-		printk("%sath: ", level);
-
-	vprintk(fmt, args);
-
-	va_end(args);
-}
-#endif
-
 EXPORT_SYMBOL(ath_printk);

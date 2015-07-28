@@ -9,11 +9,6 @@ config VIDEO_CX2341X
 	tristate
 	depends on m
 
-config VIDEO_BTCX
-	depends on PCI
-	tristate
-	depends on m
-
 config VIDEO_TVEEPROM
 	tristate
 	depends on m

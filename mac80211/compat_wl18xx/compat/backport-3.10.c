@@ -17,59 +17,7 @@
 #include <linux/pci.h>
 #include <linux/pci_regs.h>
 #include <linux/of.h>
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
-#include <linux/init.h>
-#include <linux/debugfs.h>
-#include <linux/device.h>
-#include <linux/slab.h>
-#include <linux/async.h>
-#include <linux/mutex.h>
-#include <linux/suspend.h>
-#include <linux/delay.h>
-#include <linux/gpio.h>
-#include <linux/regmap.h>
-#include <linux/regulator/of_regulator.h>
-#include <linux/regulator/consumer.h>
-#include <linux/regulator/driver.h>
-#include <linux/regulator/machine.h>
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)) */
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0))
-#ifdef CPTCFG_REGULATOR
-/**
- * regulator_map_voltage_ascend - map_voltage() for ascendant voltage list
- *
- * @rdev: Regulator to operate on
- * @min_uV: Lower bound for voltage
- * @max_uV: Upper bound for voltage
- *
- * Drivers that have ascendant voltage list can use this as their
- * map_voltage() operation.
- */
-int regulator_map_voltage_ascend(struct regulator_dev *rdev,
-				 int min_uV, int max_uV)
-{
-	int i, ret;
-
-	for (i = 0; i < rdev->desc->n_voltages; i++) {
-		ret = rdev->desc->ops->list_voltage(rdev, i);
-		if (ret < 0)
-			continue;
-
-		if (ret > max_uV)
-			break;
-
-		if (ret >= min_uV && ret <= max_uV)
-			return i;
-	}
-
-	return -EINVAL;
-}
-EXPORT_SYMBOL_GPL(regulator_map_voltage_ascend);
-
-#endif /* CPTCFG_REGULATOR */
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)) */
+#include <linux/mm.h>
 
 void proc_set_size(struct proc_dir_entry *de, loff_t size)
 {
@@ -96,7 +44,6 @@ unsigned int get_random_int(void)
 }
 EXPORT_SYMBOL_GPL(get_random_int);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28))
 #ifdef CONFIG_TTY
 /**
  * tty_port_tty_wakeup - helper to wake up a tty
@@ -174,8 +121,6 @@ int pci_vfs_assigned(struct pci_dev *dev)
 EXPORT_SYMBOL_GPL(pci_vfs_assigned);
 #endif /* CONFIG_PCI_IOV */
 
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)) */
-
 #ifdef CONFIG_OF
 /**
  * of_find_property_value_of_size
@@ -190,8 +135,8 @@ EXPORT_SYMBOL_GPL(pci_vfs_assigned);
  * property data isn't large enough.
  *
  */
-static void *of_find_property_value_of_size(const struct device_node *np,
-			const char *propname, u32 len)
+void *of_find_property_value_of_size(const struct device_node *np,
+				     const char *propname, u32 len)
 {
 	struct property *prop = of_find_property(np, propname, NULL);
 
@@ -235,3 +180,48 @@ int of_property_read_u32_index(const struct device_node *np,
 }
 EXPORT_SYMBOL_GPL(of_property_read_u32_index);
 #endif /* CONFIG_OF */
+
+static inline void set_page_count(struct page *page, int v)
+{
+	atomic_set(&page->_count, v);
+}
+
+/*
+ * Turn a non-refcounted page (->_count == 0) into refcounted with
+ * a count of one.
+ */
+static inline void set_page_refcounted(struct page *page)
+{
+	VM_BUG_ON(PageTail(page));
+	VM_BUG_ON(atomic_read(&page->_count));
+	set_page_count(page, 1);
+}
+
+/*
+ * split_page takes a non-compound higher-order page, and splits it into
+ * n (1<<order) sub-pages: page[0..n]
+ * Each sub-page must be freed individually.
+ *
+ * Note: this is probably too low level an operation for use in drivers.
+ * Please consult with lkml before using this in your driver.
+ */
+void split_page(struct page *page, unsigned int order)
+{
+	int i;
+
+	VM_BUG_ON(PageCompound(page));
+	VM_BUG_ON(!page_count(page));
+
+#ifdef CONFIG_KMEMCHECK
+	/*
+	 * Split shadow pages too, because free(page[0]) would
+	 * otherwise free the whole shadow.
+	 */
+	if (kmemcheck_page_is_tracked(page))
+		split_page(virt_to_page(page[0].shadow), order);
+#endif
+
+	for (i = 1; i < (1 << order); i++)
+		set_page_refcounted(page + i);
+}
+EXPORT_SYMBOL_GPL(split_page);

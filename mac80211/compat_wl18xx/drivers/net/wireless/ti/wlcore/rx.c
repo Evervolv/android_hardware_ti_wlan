@@ -74,7 +74,15 @@ static void wl1271_rx_status(struct wl1271 *wl,
 	if (desc->rate <= wl->hw_min_ht_rate)
 		status->flag |= RX_FLAG_HT;
 
-	status->signal = desc->rssi;
+	/*
+	 * Read the signal level and antenna diversity indication.
+	 * The msb in the signal level is always set as it is a
+	 * negative number.
+	 * The antenna indication is the msb of the rssi.
+	 */
+
+	status->signal = ((desc->rssi & RSSI_LEVEL_BITMASK) | BIT(7));
+	status->antenna = ((desc->rssi & ANT_DIVERSITY_BITMASK) >> 7);
 
 	/*
 	 * FIXME: In wl1251, the SNR should be divided by two.  In wl1271 we
@@ -220,7 +228,6 @@ int wlcore_rx(struct wl1271 *wl, struct wl_fw_status *status)
 	u8 hlid;
 	enum wl_rx_buf_align rx_align;
 	int ret = 0;
-	int orig_cnt = wl->rx_counter, diff;
 
 	while (drv_rx_counter != fw_rx_counter) {
 		buf_size = 0;
@@ -296,13 +303,6 @@ int wlcore_rx(struct wl1271 *wl, struct wl_fw_status *status)
 	}
 
 	wl12xx_rearm_rx_streaming(wl, active_hlids);
-
-	diff = wl->rx_counter - orig_cnt;
-	if (diff > 32) {
-		wl1271_error("invalid Rx completed packets %d\n", diff);
-	} else {
-		wl->rx_completions[diff-1]++;
-	}
 
 out:
 	return ret;

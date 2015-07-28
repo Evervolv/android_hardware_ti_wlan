@@ -174,7 +174,8 @@ int __cfg80211_join_mesh(struct cfg80211_registered_device *rdev,
 							       scan_width);
 	}
 
-	if (!cfg80211_reg_can_beacon(&rdev->wiphy, &setup->chandef))
+	if (!cfg80211_reg_can_beacon(&rdev->wiphy, &setup->chandef,
+				     NL80211_IFTYPE_MESH_POINT))
 		return -EINVAL;
 
 	err = rdev_join_mesh(rdev, dev, conf, setup);

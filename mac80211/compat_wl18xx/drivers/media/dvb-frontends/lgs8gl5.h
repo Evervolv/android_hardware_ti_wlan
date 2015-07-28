@@ -31,7 +31,7 @@ struct lgs8gl5_config {
 	u8 demod_address;
 };
 
-#if IS_ENABLED(CPTCFG_DVB_LGS8GL5)
+#if IS_REACHABLE(CPTCFG_DVB_LGS8GL5)
 extern struct dvb_frontend *lgs8gl5_attach(
 	const struct lgs8gl5_config *config, struct i2c_adapter *i2c);
 #else

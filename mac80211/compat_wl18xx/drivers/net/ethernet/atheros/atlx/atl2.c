@@ -55,6 +55,7 @@ static const char atl2_driver_name[] = "atl2";
 static const char atl2_driver_string[] = "Atheros(R) L2 Ethernet Driver";
 static const char atl2_copyright[] = "Copyright (c) 2007 Atheros Corporation.";
 static const char atl2_driver_version[] = ATL2_DRV_VERSION;
+static const struct ethtool_ops atl2_ethtool_ops;
 
 MODULE_AUTHOR("Atheros Corporation <xiong.huang@atheros.com>, Chris Snook <csnook@redhat.com>");
 MODULE_DESCRIPTION("Atheros Fast Ethernet Network Driver");
@@ -64,14 +65,12 @@ MODULE_VERSION(ATL2_DRV_VERSION);
 /*
  * atl2_pci_tbl - PCI Device ID Table
  */
-static DEFINE_PCI_DEVICE_TABLE(atl2_pci_tbl) = {
+static const struct pci_device_id atl2_pci_tbl[] = {
 	{PCI_DEVICE(PCI_VENDOR_ID_ATTANSIC, PCI_DEVICE_ID_ATTANSIC_L2)},
 	/* required last entry */
 	{0,}
 };
 MODULE_DEVICE_TABLE(pci, atl2_pci_tbl);
-
-static void atl2_set_ethtool_ops(struct net_device *netdev);
 
 static void atl2_check_options(struct atl2_adapter *adapter);
 
@@ -361,7 +360,6 @@ static inline void atl2_irq_disable(struct atl2_adapter *adapter)
     synchronize_irq(adapter->pdev->irq);
 }
 
-#if defined(NETIF_F_HW_VLAN_TX) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 static void __atl2_vlan_mode(netdev_features_t features, u32 *ctrl)
 {
 	if (features & NETIF_F_HW_VLAN_CTAG_RX) {
@@ -387,16 +385,12 @@ static void atl2_vlan_mode(struct net_device *netdev,
 
 	atl2_irq_enable(adapter);
 }
-#endif
 
 static void atl2_restore_vlan(struct atl2_adapter *adapter)
 {
-#if defined(NETIF_F_HW_VLAN_TX) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	atl2_vlan_mode(adapter->netdev, adapter->netdev->features);
-#endif
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 static netdev_features_t atl2_fix_features(struct net_device *netdev,
 	netdev_features_t features)
 {
@@ -422,7 +416,6 @@ static int atl2_set_features(struct net_device *netdev,
 
 	return 0;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 static void atl2_intr_rx(struct atl2_adapter *adapter)
 {
@@ -894,8 +887,8 @@ static netdev_tx_t atl2_xmit_frame(struct sk_buff *skb,
 		offset = ((u32)(skb->len-copy_len + 3) & ~3);
 	}
 #ifdef NETIF_F_HW_VLAN_CTAG_TX
-	if (vlan_tx_tag_present(skb)) {
-		u16 vlan_tag = vlan_tx_tag_get(skb);
+	if (skb_vlan_tag_present(skb)) {
+		u16 vlan_tag = skb_vlan_tag_get(skb);
 		vlan_tag = (vlan_tag << 4) |
 			(vlan_tag >> 13) |
 			((vlan_tag >> 9) & 0x8);
@@ -1156,9 +1149,7 @@ static void atl2_setup_mac_ctrl(struct atl2_adapter *adapter)
 		MAC_CTRL_PRMLEN_SHIFT);
 
 	/* vlan */
-#if defined(NETIF_F_HW_VLAN_TX) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	__atl2_vlan_mode(netdev->features, &value);
-#endif
 
 	/* filter mode */
 	value |= MAC_CTRL_BC_EN;
@@ -1323,10 +1314,8 @@ static const struct net_device_ops atl2_netdev_ops = {
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_set_mac_address	= atl2_set_mac,
 	.ndo_change_mtu		= atl2_change_mtu,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	.ndo_fix_features	= atl2_fix_features,
 	.ndo_set_features	= atl2_set_features,
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 	.ndo_do_ioctl		= atl2_ioctl,
 	.ndo_tx_timeout		= atl2_tx_timeout,
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -1407,7 +1396,7 @@ static int atl2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	atl2_setup_pcicmd(pdev);
 
 	netdev->netdev_ops = &atl2_netdev_ops;
-	atl2_set_ethtool_ops(netdev);
+	netdev->ethtool_ops = &atl2_ethtool_ops;
 	netdev->watchdog_timeo = 5 * HZ;
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
@@ -1423,12 +1412,8 @@ static int atl2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	err = -EIO;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netdev->hw_features = NETIF_F_SG | NETIF_F_HW_VLAN_CTAG_RX;
-#endif
-#if defined(NETIF_F_HW_VLAN_TX) || (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netdev->features |= (NETIF_F_HW_VLAN_CTAG_TX | NETIF_F_HW_VLAN_CTAG_RX);
-#endif
 
 	/* Init PHY as early as possible due to power saving issue  */
 	atl2_phy_init(&adapter->hw);
@@ -1451,13 +1436,11 @@ static int atl2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	atl2_check_options(adapter);
 
-	init_timer(&adapter->watchdog_timer);
-	adapter->watchdog_timer.function = atl2_watchdog;
-	adapter->watchdog_timer.data = (unsigned long) adapter;
+	setup_timer(&adapter->watchdog_timer, atl2_watchdog,
+		    (unsigned long)adapter);
 
-	init_timer(&adapter->phy_config_timer);
-	adapter->phy_config_timer.function = atl2_phy_config;
-	adapter->phy_config_timer.data = (unsigned long) adapter;
+	setup_timer(&adapter->phy_config_timer, atl2_phy_config,
+		    (unsigned long)adapter);
 
 	INIT_WORK(&adapter->reset_task, atl2_reset_task);
 	INIT_WORK(&adapter->link_chg_task, atl2_link_chg_task);
@@ -1784,8 +1767,8 @@ static int atl2_get_settings(struct net_device *netdev,
 		else
 			ecmd->duplex = DUPLEX_HALF;
 	} else {
-		ethtool_cmd_speed_set(ecmd, -1);
-		ecmd->duplex = -1;
+		ethtool_cmd_speed_set(ecmd, SPEED_UNKNOWN);
+		ecmd->duplex = DUPLEX_UNKNOWN;
 	}
 
 	ecmd->autoneg = AUTONEG_ENABLE;
@@ -2102,13 +2085,6 @@ static int atl2_nway_reset(struct net_device *netdev)
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-static u32 atl2_get_tx_csum(struct net_device *netdev)
-{
-	return (netdev->features & NETIF_F_HW_CSUM) != 0;
-}
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
-
 static const struct ethtool_ops atl2_ethtool_ops = {
 	.get_settings		= atl2_get_settings,
 	.set_settings		= atl2_set_settings,
@@ -2124,20 +2100,7 @@ static const struct ethtool_ops atl2_ethtool_ops = {
 	.get_eeprom_len		= atl2_get_eeprom_len,
 	.get_eeprom		= atl2_get_eeprom,
 	.set_eeprom		= atl2_set_eeprom,
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-	.get_tx_csum		= atl2_get_tx_csum,
-	.get_sg			= ethtool_op_get_sg,
-	.set_sg			= ethtool_op_set_sg,
-#ifdef NETIF_F_TSO
-	.get_tso		= ethtool_op_get_tso,
-#endif
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 };
-
-static void atl2_set_ethtool_ops(struct net_device *netdev)
-{
-	SET_ETHTOOL_OPS(netdev, &atl2_ethtool_ops);
-}
 
 #define LBYTESWAP(a)  ((((a) & 0x00ff00ff) << 8) | \
 	(((a) & 0xff00ff00) >> 8))
@@ -2528,7 +2491,6 @@ static s32 atl2_get_speed_and_duplex(struct atl2_hw *hw, u16 *speed,
 		break;
 	default:
 		return ATLX_ERR_PHY_SPEED;
-		break;
 	}
 
 	if (phy_data & MII_ATLX_PSSR_DPLX)
@@ -2968,11 +2930,9 @@ static int atl2_validate_option(int *value, struct atl2_option *opt)
 		case OPTION_ENABLED:
 			printk(KERN_INFO "%s Enabled\n", opt->name);
 			return 0;
-			break;
 		case OPTION_DISABLED:
 			printk(KERN_INFO "%s Disabled\n", opt->name);
 			return 0;
-			break;
 		}
 		break;
 	case range_option:

@@ -9,7 +9,7 @@ config IPW2100
 	depends on WIRELESS_EXT
 	depends on WEXT_SPY
 	depends on WEXT_PRIV
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	select LIB80211
 	select LIBIPW
 	---help---
@@ -67,11 +67,12 @@ config IPW2100_DEBUG
 config IPW2200
 	tristate "Intel PRO/Wireless 2200BG and 2915ABG Network Connection"
 	depends on m
-	depends on PCI && CFG80211 && CFG80211_WEXT
+	depends on PCI && CFG80211
+	select CFG80211_WEXT_EXPORT
 	depends on WIRELESS_EXT
 	depends on WEXT_SPY
 	depends on WEXT_PRIV
-	select BACKPORT_FW_LOADER
+	depends on FW_LOADER
 	select LIB80211
 	select LIBIPW
 	---help---

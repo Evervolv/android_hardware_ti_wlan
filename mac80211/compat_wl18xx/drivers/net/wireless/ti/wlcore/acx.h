@@ -928,6 +928,7 @@ struct wl12xx_acx_config_hangover {
 	u8 padding[2];
 } __packed;
 
+
 struct acx_default_rx_filter {
 	struct acx_header header;
 	u8 enable;

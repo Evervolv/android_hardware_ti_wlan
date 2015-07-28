@@ -1,5 +1,4 @@
 config WIL6210
-	depends on !BACKPORT_KERNEL_2_6_31
 	tristate "Wilocity 60g WiFi card wil6210 support"
 	depends on m
 	depends on CFG80211

@@ -1,5 +1,4 @@
 config VIDEO_MEYE
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Sony Vaio Picturebook Motion Eye Video For Linux"
 	depends on m
 	depends on PCI && SONY_LAPTOP && VIDEO_V4L2

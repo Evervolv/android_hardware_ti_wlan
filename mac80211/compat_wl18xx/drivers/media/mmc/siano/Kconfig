@@ -7,6 +7,8 @@ config SMS_SDIO_DRV
 	depends on m
 	depends on DVB_CORE && HAS_DMA
 	depends on MMC
+	depends on !RC_CORE || RC_CORE
 	select MEDIA_COMMON_OPTIONS
+	select SMS_SIANO_MDTV
 	---help---
 	  Choose if you would like to have Siano's support for SDIO interface

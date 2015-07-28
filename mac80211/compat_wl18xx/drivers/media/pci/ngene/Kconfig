@@ -1,5 +1,4 @@
 config DVB_NGENE
-	depends on BACKPORT_DISABLED_KCONFIG_OPTION
 	tristate "Micronas nGene support"
 	depends on m
 	depends on DVB_CORE && PCI && I2C

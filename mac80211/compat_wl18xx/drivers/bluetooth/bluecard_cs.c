@@ -61,7 +61,7 @@ MODULE_LICENSE("GPL");
 /* ======================== Local structures ======================== */
 
 
-typedef struct bluecard_info_t {
+struct bluecard_info {
 	struct pcmcia_device *p_dev;
 
 	struct hci_dev *hdev;
@@ -78,7 +78,7 @@ typedef struct bluecard_info_t {
 
 	unsigned char ctrl_reg;
 	unsigned long hw_state;		/* Status of the hardware and LED control */
-} bluecard_info_t;
+};
 
 
 static int bluecard_config(struct pcmcia_device *link);
@@ -157,13 +157,8 @@ static void bluecard_detach(struct pcmcia_device *p_dev);
 
 static void bluecard_activity_led_timeout(u_long arg)
 {
-	bluecard_info_t *info = (bluecard_info_t *)arg;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
+	struct bluecard_info *info = (struct bluecard_info *)arg;
 	unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-	unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
-
 
 	if (!test_bit(CARD_HAS_PCCARD_ID, &(info->hw_state)))
 		return;
@@ -178,13 +173,9 @@ static void bluecard_activity_led_timeout(u_long arg)
 }
 
 
-static void bluecard_enable_activity_led(bluecard_info_t *info)
+static void bluecard_enable_activity_led(struct bluecard_info *info)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-	unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 
 	if (!test_bit(CARD_HAS_PCCARD_ID, &(info->hw_state)))
 		return;
@@ -224,7 +215,7 @@ static int bluecard_write(unsigned int iobase, unsigned int offset, __u8 *buf, i
 }
 
 
-static void bluecard_write_wakeup(bluecard_info_t *info)
+static void bluecard_write_wakeup(struct bluecard_info *info)
 {
 	if (!info) {
 		BT_ERR("Unknown device");
@@ -240,11 +231,7 @@ static void bluecard_write_wakeup(bluecard_info_t *info)
 	}
 
 	do {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 		unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-		unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 		unsigned int offset;
 		unsigned char command;
 		unsigned long ready_bit;
@@ -270,7 +257,8 @@ static void bluecard_write_wakeup(bluecard_info_t *info)
 			ready_bit = XMIT_BUF_ONE_READY;
 		}
 
-		if (!(skb = skb_dequeue(&(info->txq))))
+		skb = skb_dequeue(&(info->txq));
+		if (!skb)
 			break;
 
 		if (bt_cb(skb)->pkt_type & 0x80) {
@@ -380,7 +368,8 @@ static int bluecard_read(unsigned int iobase, unsigned int offset, __u8 *buf, in
 }
 
 
-static void bluecard_receive(bluecard_info_t *info, unsigned int offset)
+static void bluecard_receive(struct bluecard_info *info,
+			     unsigned int offset)
 {
 	unsigned int iobase;
 	unsigned char buf[31];
@@ -391,11 +380,7 @@ static void bluecard_receive(bluecard_info_t *info, unsigned int offset)
 		return;
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	iobase = info->p_dev->resource[0]->start;
-#else
-	iobase = info->p_dev->io.BasePort1;
-#endif
 
 	if (test_bit(XMIT_SENDING_READY, &(info->tx_state)))
 		bluecard_enable_activity_led(info);
@@ -408,7 +393,8 @@ static void bluecard_receive(bluecard_info_t *info, unsigned int offset)
 		if (info->rx_skb == NULL) {
 			info->rx_state = RECV_WAIT_PACKET_TYPE;
 			info->rx_count = 0;
-			if (!(info->rx_skb = bt_skb_alloc(HCI_MAX_FRAME_SIZE, GFP_ATOMIC))) {
+			info->rx_skb = bt_skb_alloc(HCI_MAX_FRAME_SIZE, GFP_ATOMIC);
+			if (!info->rx_skb) {
 				BT_ERR("Can't allocate mem for new packet");
 				return;
 			}
@@ -512,7 +498,7 @@ static void bluecard_receive(bluecard_info_t *info, unsigned int offset)
 
 static irqreturn_t bluecard_interrupt(int irq, void *dev_inst)
 {
-	bluecard_info_t *info = dev_inst;
+	struct bluecard_info *info = dev_inst;
 	unsigned int iobase;
 	unsigned char reg;
 
@@ -523,11 +509,7 @@ static irqreturn_t bluecard_interrupt(int irq, void *dev_inst)
 	if (!test_bit(CARD_READY, &(info->hw_state)))
 		return IRQ_HANDLED;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	iobase = info->p_dev->resource[0]->start;
-#else
-	iobase = info->p_dev->io.BasePort1;
-#endif
 
 	spin_lock(&(info->lock));
 
@@ -581,13 +563,14 @@ static irqreturn_t bluecard_interrupt(int irq, void *dev_inst)
 
 static int bluecard_hci_set_baud_rate(struct hci_dev *hdev, int baud)
 {
-	bluecard_info_t *info = hci_get_drvdata(hdev);
+	struct bluecard_info *info = hci_get_drvdata(hdev);
 	struct sk_buff *skb;
 
 	/* Ericsson baud rate command */
 	unsigned char cmd[] = { HCI_COMMAND_PKT, 0x09, 0xfc, 0x01, 0x03 };
 
-	if (!(skb = bt_skb_alloc(HCI_MAX_FRAME_SIZE, GFP_ATOMIC))) {
+	skb = bt_skb_alloc(HCI_MAX_FRAME_SIZE, GFP_ATOMIC);
+	if (!skb) {
 		BT_ERR("Can't allocate mem for new packet");
 		return -1;
 	}
@@ -629,7 +612,7 @@ static int bluecard_hci_set_baud_rate(struct hci_dev *hdev, int baud)
 
 static int bluecard_hci_flush(struct hci_dev *hdev)
 {
-	bluecard_info_t *info = hci_get_drvdata(hdev);
+	struct bluecard_info *info = hci_get_drvdata(hdev);
 
 	/* Drop TX queue */
 	skb_queue_purge(&(info->txq));
@@ -640,7 +623,7 @@ static int bluecard_hci_flush(struct hci_dev *hdev)
 
 static int bluecard_hci_open(struct hci_dev *hdev)
 {
-	bluecard_info_t *info = hci_get_drvdata(hdev);
+	struct bluecard_info *info = hci_get_drvdata(hdev);
 
 	if (test_bit(CARD_HAS_PCCARD_ID, &(info->hw_state)))
 		bluecard_hci_set_baud_rate(hdev, DEFAULT_BAUD_RATE);
@@ -649,11 +632,7 @@ static int bluecard_hci_open(struct hci_dev *hdev)
 		return 0;
 
 	if (test_bit(CARD_HAS_PCCARD_ID, &(info->hw_state))) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 		unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-		unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 
 		/* Enable LED */
 		outb(0x08 | 0x20, iobase + 0x30);
@@ -665,7 +644,7 @@ static int bluecard_hci_open(struct hci_dev *hdev)
 
 static int bluecard_hci_close(struct hci_dev *hdev)
 {
-	bluecard_info_t *info = hci_get_drvdata(hdev);
+	struct bluecard_info *info = hci_get_drvdata(hdev);
 
 	if (!test_and_clear_bit(HCI_RUNNING, &(hdev->flags)))
 		return 0;
@@ -673,11 +652,7 @@ static int bluecard_hci_close(struct hci_dev *hdev)
 	bluecard_hci_flush(hdev);
 
 	if (test_bit(CARD_HAS_PCCARD_ID, &(info->hw_state))) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 		unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-		unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 
 		/* Disable LED */
 		outb(0x00, iobase + 0x30);
@@ -689,7 +664,7 @@ static int bluecard_hci_close(struct hci_dev *hdev)
 
 static int bluecard_hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 {
-	bluecard_info_t *info = hci_get_drvdata(hdev);
+	struct bluecard_info *info = hci_get_drvdata(hdev);
 
 	switch (bt_cb(skb)->pkt_type) {
 	case HCI_COMMAND_PKT:
@@ -717,13 +692,9 @@ static int bluecard_hci_send_frame(struct hci_dev *hdev, struct sk_buff *skb)
 /* ======================== Card services HCI interaction ======================== */
 
 
-static int bluecard_open(bluecard_info_t *info)
+static int bluecard_open(struct bluecard_info *info)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-	unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 	struct hci_dev *hdev;
 	unsigned char id;
 
@@ -836,13 +807,9 @@ static int bluecard_open(bluecard_info_t *info)
 }
 
 
-static int bluecard_close(bluecard_info_t *info)
+static int bluecard_close(struct bluecard_info *info)
 {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	unsigned int iobase = info->p_dev->resource[0]->start;
-#else
-	unsigned int iobase = info->p_dev->io.BasePort1;
-#endif
 	struct hci_dev *hdev = info->hdev;
 
 	if (!hdev)
@@ -867,7 +834,7 @@ static int bluecard_close(bluecard_info_t *info)
 
 static int bluecard_probe(struct pcmcia_device *link)
 {
-	bluecard_info_t *info;
+	struct bluecard_info *info;
 
 	/* Create new info device */
 	info = devm_kzalloc(&link->dev, sizeof(*info), GFP_KERNEL);
@@ -877,18 +844,7 @@ static int bluecard_probe(struct pcmcia_device *link)
 	info->p_dev = link;
 	link->priv = info;
 
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-	link->irq.Attributes = IRQ_TYPE_DYNAMIC_SHARING;
-
-	link->irq.Handler = bluecard_interrupt;
-#endif
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
 	link->config_flags |= CONF_ENABLE_IRQ;
-#else
-	link->conf.Attributes = CONF_ENABLE_IRQ;
-	link->conf.IntType = INT_MEMORY_AND_IO;
-#endif
 
 	return bluecard_config(link);
 }
@@ -902,33 +858,18 @@ static void bluecard_detach(struct pcmcia_device *link)
 
 static int bluecard_config(struct pcmcia_device *link)
 {
-	bluecard_info_t *info = link->priv;
+	struct bluecard_info *info = link->priv;
 	int i, n;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
 	link->config_index = 0x20;
-#else
-	link->conf.ConfigIndex = 0x20;
-#endif
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	link->resource[0]->flags |= IO_DATA_PATH_WIDTH_8;
 	link->resource[0]->end = 64;
 	link->io_lines = 6;
-#else
-	link->io.Attributes1 = IO_DATA_PATH_WIDTH_8;
-	link->io.NumPorts1 = 64;
-	link->io.IOAddrLines = 6;
-#endif
 
 	for (n = 0; n < 0x400; n += 0x40) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 		link->resource[0]->start = n ^ 0x300;
 		i = pcmcia_request_io(link);
-#else
-		link->io.BasePort1 = n ^ 0x300;
-		i = pcmcia_request_io(link, &link->io);
-#endif
 		if (i == 0)
 			break;
 	}
@@ -936,15 +877,9 @@ static int bluecard_config(struct pcmcia_device *link)
 	if (i != 0)
 		goto failed;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	i = pcmcia_request_irq(link, bluecard_interrupt);
 	if (i != 0)
 		goto failed;
-#else
-	i = pcmcia_request_irq(link, &link->irq);
-	if (i != 0)
-		link->irq.AssignedIRQ = 0;
-#endif
 
 	i = pcmcia_enable_device(link);
 	if (i != 0)
@@ -963,11 +898,11 @@ failed:
 
 static void bluecard_release(struct pcmcia_device *link)
 {
-	bluecard_info_t *info = link->priv;
+	struct bluecard_info *info = link->priv;
 
 	bluecard_close(info);
 
-	del_timer(&(info->timer));
+	del_timer_sync(&(info->timer));
 
 	pcmcia_disable_device(link);
 }
@@ -982,13 +917,7 @@ MODULE_DEVICE_TABLE(pcmcia, bluecard_ids);
 
 static struct pcmcia_driver bluecard_driver = {
 	.owner		= THIS_MODULE,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37))
 	.name		= "bluecard_cs",
-#else
-	.drv		= {
-		.name	= "bluecard_cs",
-	},
-#endif
 	.probe		= bluecard_probe,
 	.remove		= bluecard_detach,
 	.id_table	= bluecard_ids,

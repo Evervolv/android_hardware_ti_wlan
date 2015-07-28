@@ -3,13 +3,15 @@
 #include_next <linux/ktime.h>
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35)
-#define ktime_to_ms LINUX_BACKPORT(ktime_to_ms)
-static inline s64 ktime_to_ms(const ktime_t kt)
-{
-	struct timeval tv = ktime_to_timeval(kt);
-	return (s64) tv.tv_sec * MSEC_PER_SEC + tv.tv_usec / USEC_PER_MSEC;
-}
-#endif /* #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35) */
+#if  LINUX_VERSION_CODE < KERNEL_VERSION(3,17,0)
+#define ktime_get_raw LINUX_BACKPORT(ktime_get_raw)
+extern ktime_t ktime_get_raw(void);
 
+#endif /* < 3.17 */
+
+#ifndef ktime_to_timespec64
+/* Map the ktime_t to timespec conversion to ns_to_timespec function */
+#define ktime_to_timespec64(kt)		ns_to_timespec64((kt).tv64)
 #endif
+
+#endif /* __BACKPORT_LINUX_KTIME_H */

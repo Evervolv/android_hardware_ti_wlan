@@ -95,6 +95,8 @@ void *v4l2_m2m_get_curr_priv(struct v4l2_m2m_dev *m2m_dev);
 struct vb2_queue *v4l2_m2m_get_vq(struct v4l2_m2m_ctx *m2m_ctx,
 				       enum v4l2_buf_type type);
 
+void v4l2_m2m_try_schedule(struct v4l2_m2m_ctx *m2m_ctx);
+
 void v4l2_m2m_job_finish(struct v4l2_m2m_dev *m2m_dev,
 			 struct v4l2_m2m_ctx *m2m_ctx);
 
@@ -117,8 +119,10 @@ int v4l2_m2m_dqbuf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 int v4l2_m2m_create_bufs(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 			 struct v4l2_create_buffers *create);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
 int v4l2_m2m_expbuf(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 		   struct v4l2_exportbuffer *eb);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0) */
 
 int v4l2_m2m_streamon(struct file *file, struct v4l2_m2m_ctx *m2m_ctx,
 		      enum v4l2_buf_type type);
@@ -240,8 +244,10 @@ int v4l2_m2m_ioctl_create_bufs(struct file *file, void *fh,
 				struct v4l2_create_buffers *create);
 int v4l2_m2m_ioctl_querybuf(struct file *file, void *fh,
 				struct v4l2_buffer *buf);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0)
 int v4l2_m2m_ioctl_expbuf(struct file *file, void *fh,
 				struct v4l2_exportbuffer *eb);
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0) */
 int v4l2_m2m_ioctl_qbuf(struct file *file, void *fh,
 				struct v4l2_buffer *buf);
 int v4l2_m2m_ioctl_dqbuf(struct file *file, void *fh,

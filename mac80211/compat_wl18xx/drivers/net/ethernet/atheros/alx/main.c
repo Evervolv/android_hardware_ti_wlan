@@ -184,15 +184,16 @@ static void alx_schedule_reset(struct alx_priv *alx)
 	schedule_work(&alx->reset_wk);
 }
 
-static bool alx_clean_rx_irq(struct alx_priv *alx, int budget)
+static int alx_clean_rx_irq(struct alx_priv *alx, int budget)
 {
 	struct alx_rx_queue *rxq = &alx->rxq;
 	struct alx_rrd *rrd;
 	struct alx_buffer *rxb;
 	struct sk_buff *skb;
 	u16 length, rfd_cleaned = 0;
+	int work = 0;
 
-	while (budget > 0) {
+	while (work < budget) {
 		rrd = &rxq->rrd[rxq->rrd_read_idx];
 		if (!(rrd->word3 & cpu_to_le32(1 << RRD_UPDATED_SHIFT)))
 			break;
@@ -203,7 +204,7 @@ static bool alx_clean_rx_irq(struct alx_priv *alx, int budget)
 		    ALX_GET_FIELD(le32_to_cpu(rrd->word0),
 				  RRD_NOR) != 1) {
 			alx_schedule_reset(alx);
-			return 0;
+			return work;
 		}
 
 		rxb = &rxq->bufs[rxq->read_idx];
@@ -243,7 +244,7 @@ static bool alx_clean_rx_irq(struct alx_priv *alx, int budget)
 		}
 
 		napi_gro_receive(&alx->napi, skb);
-		budget--;
+		work++;
 
 next_pkt:
 		if (++rxq->read_idx == alx->rx_ringsz)
@@ -258,21 +259,22 @@ next_pkt:
 	if (rfd_cleaned)
 		alx_refill_rx_ring(alx, GFP_ATOMIC);
 
-	return budget > 0;
+	return work;
 }
 
 static int alx_poll(struct napi_struct *napi, int budget)
 {
 	struct alx_priv *alx = container_of(napi, struct alx_priv, napi);
 	struct alx_hw *hw = &alx->hw;
-	bool complete = true;
 	unsigned long flags;
+	bool tx_complete;
+	int work;
 
-	complete = alx_clean_tx_irq(alx) &&
-		   alx_clean_rx_irq(alx, budget);
+	tx_complete = alx_clean_tx_irq(alx);
+	work = alx_clean_rx_irq(alx, budget);
 
-	if (!complete)
-		return 1;
+	if (!tx_complete || work == budget)
+		return budget;
 
 	napi_complete(&alx->napi);
 
@@ -284,7 +286,7 @@ static int alx_poll(struct napi_struct *napi, int budget)
 
 	alx_post_write(hw);
 
-	return 0;
+	return work;
 }
 
 static irqreturn_t alx_intr_handle(struct alx_priv *alx, u32 intr)
@@ -495,10 +497,8 @@ static int alx_set_mac_address(struct net_device *netdev, void *data)
 	if (!is_valid_ether_addr(addr->sa_data))
 		return -EADDRNOTAVAIL;
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	if (netdev->addr_assign_type & NET_ADDR_RANDOM)
 		netdev->addr_assign_type ^= NET_ADDR_RANDOM;
-#endif
 
 	memcpy(netdev->dev_addr, addr->sa_data, netdev->addr_len);
 	memcpy(hw->mac_addr, addr->sa_data, netdev->addr_len);
@@ -537,7 +537,7 @@ static int alx_alloc_descriptors(struct alx_priv *alx)
 	if (!alx->descmem.virt)
 		goto out_free;
 
-	alx->txq.tpd = (void *)alx->descmem.virt;
+	alx->txq.tpd = alx->descmem.virt;
 	alx->txq.tpd_dma = alx->descmem.dma;
 
 	/* alignment requirement for next block */
@@ -735,7 +735,6 @@ static int alx_init_sw(struct alx_priv *alx)
 }
 
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 static netdev_features_t alx_fix_features(struct net_device *netdev,
 					  netdev_features_t features)
 {
@@ -744,7 +743,6 @@ static netdev_features_t alx_fix_features(struct net_device *netdev,
 
 	return features;
 }
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 static void alx_netif_stop(struct alx_priv *alx)
 {
@@ -821,17 +819,7 @@ static int alx_change_mtu(struct net_device *netdev, int mtu)
 	alx->hw.mtu = mtu;
 	alx->rxbuf_size = mtu > ALX_DEF_RXBUF_SIZE ?
 			   ALIGN(max_frame, 8) : ALX_DEF_RXBUF_SIZE;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39))
-	if (mtu > (7*1024)) {
-		netdev->features &= ~NETIF_F_TSO;
-		netdev->features &= ~NETIF_F_TSO6;
-	} else {
-		netdev->features |= NETIF_F_TSO;
-		netdev->features |= NETIF_F_TSO6;
-	}
-#else
 	netdev_update_features(netdev);
-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,39)) */
 	if (netif_running(netdev))
 		alx_reinit(alx);
 	return 0;
@@ -1111,7 +1099,7 @@ static netdev_tx_t alx_start_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 
 drop:
-	dev_kfree_skb(skb);
+	dev_kfree_skb_any(skb);
 	return NETDEV_TX_OK;
 }
 
@@ -1180,19 +1168,11 @@ static void alx_poll_controller(struct net_device *netdev)
 }
 #endif
 
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 static struct rtnl_link_stats64 *alx_get_stats64(struct net_device *dev,
 					struct rtnl_link_stats64 *net_stats)
-#else
-static struct net_device_stats *alx_get_stats(struct net_device *dev)
-#endif
 {
 	struct alx_priv *alx = netdev_priv(dev);
 	struct alx_hw_stats *hw_stats = &alx->hw.stats;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-	struct net_device_stats *net_stats = &dev->stats;
-#endif
 
 	spin_lock(&alx->stats_lock);
 
@@ -1241,20 +1221,14 @@ static const struct net_device_ops alx_netdev_ops = {
 	.ndo_open               = alx_open,
 	.ndo_stop               = alx_stop,
 	.ndo_start_xmit         = alx_start_xmit,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	.ndo_get_stats64        = alx_get_stats64,
-#else
-	.ndo_get_stats		= alx_get_stats,
-#endif
 	.ndo_set_rx_mode        = alx_set_rx_mode,
 	.ndo_validate_addr      = eth_validate_addr,
 	.ndo_set_mac_address    = alx_set_mac_address,
 	.ndo_change_mtu         = alx_change_mtu,
 	.ndo_do_ioctl           = alx_ioctl,
 	.ndo_tx_timeout         = alx_tx_timeout,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	.ndo_fix_features	= alx_fix_features,
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 #ifdef CONFIG_NET_POLL_CONTROLLER
 	.ndo_poll_controller    = alx_poll_controller,
 #endif
@@ -1276,19 +1250,13 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 * shared register for the high 32 bits, so only a single, aligned,
 	 * 4 GB physical address range can be used for descriptors.
 	 */
-	if (!dma_set_mask(&pdev->dev, DMA_BIT_MASK(64)) &&
-	    !dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(64))) {
+	if (!dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64))) {
 		dev_dbg(&pdev->dev, "DMA to 64-BIT addresses\n");
 	} else {
-		err = dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
+		err = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 		if (err) {
-			err = dma_set_coherent_mask(&pdev->dev,
-						    DMA_BIT_MASK(32));
-			if (err) {
-				dev_err(&pdev->dev,
-					"No usable DMA config, aborting\n");
-				goto out_pci_disable;
-			}
+			dev_err(&pdev->dev, "No usable DMA config, aborting\n");
+			goto out_pci_disable;
 		}
 	}
 
@@ -1320,6 +1288,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	alx = netdev_priv(netdev);
 	spin_lock_init(&alx->hw.mdio_lock);
 	spin_lock_init(&alx->irq_lock);
+	spin_lock_init(&alx->stats_lock);
 	alx->dev = netdev;
 	alx->hw.pdev = pdev;
 	alx->msg_enable = NETIF_MSG_LINK | NETIF_MSG_HW | NETIF_MSG_IFUP |
@@ -1335,7 +1304,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	netdev->netdev_ops = &alx_netdev_ops;
-	SET_ETHTOOL_OPS(netdev, &alx_ethtool_ops);
+	netdev->ethtool_ops = &alx_ethtool_ops;
 	netdev->irq = pdev->irq;
 	netdev->watchdog_timeo = ALX_WATCHDOG_TIME;
 
@@ -1372,11 +1341,7 @@ static int alx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 	}
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netdev->hw_features = NETIF_F_SG | NETIF_F_HW_CSUM;
-#else
-	netdev->features = NETIF_F_SG | NETIF_F_HW_CSUM;
-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 	if (alx_get_perm_macaddr(hw, hw->perm_addr)) {
 		dev_warn(&pdev->dev,
@@ -1558,13 +1523,17 @@ static void alx_pci_error_resume(struct pci_dev *pdev)
 	rtnl_unlock();
 }
 
-static const struct pci_error_handlers alx_err_handlers = {
+static 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+const 
+#endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0) */
+struct pci_error_handlers alx_err_handlers = {
 	.error_detected = alx_pci_error_detected,
 	.slot_reset     = alx_pci_error_slot_reset,
 	.resume         = alx_pci_error_resume,
 };
 
-static DEFINE_PCI_DEVICE_TABLE(alx_pci_tbl) = {
+static const struct pci_device_id alx_pci_tbl[] = {
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_AR8161),
 	  .driver_data = ALX_DEV_QUIRK_MSI_INTX_DISABLE_BUG },
 	{ PCI_VDEVICE(ATTANSIC, ALX_DEV_ID_E2200),

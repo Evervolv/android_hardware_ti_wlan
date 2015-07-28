@@ -471,8 +471,11 @@ static void ath9k_htc_tx_process(struct ath9k_htc_priv *priv,
 	if (!txok || !vif || !txs)
 		goto send_mac80211;
 
-	if (txs->ts_flags & ATH9K_HTC_TXSTAT_ACK)
+	if (txs->ts_flags & ATH9K_HTC_TXSTAT_ACK) {
 		tx_info->flags |= IEEE80211_TX_STAT_ACK;
+		if (tx_info->flags & IEEE80211_TX_CTL_AMPDU)
+			tx_info->flags |= IEEE80211_TX_STAT_AMPDU;
+	}
 
 	if (txs->ts_flags & ATH9K_HTC_TXSTAT_FILT)
 		tx_info->flags |= IEEE80211_TX_STAT_TX_FILTERED;
@@ -924,9 +927,10 @@ static void ath9k_htc_opmode_init(struct ath9k_htc_priv *priv)
 
 void ath9k_host_rx_init(struct ath9k_htc_priv *priv)
 {
+	struct ath_common *common = ath9k_hw_common(priv->ah);
 	ath9k_hw_rxena(priv->ah);
 	ath9k_htc_opmode_init(priv);
-	ath9k_hw_startpcureceive(priv->ah, test_bit(OP_SCANNING, &priv->op_flags));
+	ath9k_hw_startpcureceive(priv->ah, test_bit(ATH_OP_SCANNING, &common->op_flags));
 }
 
 static inline void convert_htc_flag(struct ath_rx_status *rx_stats,
@@ -942,7 +946,7 @@ static inline void convert_htc_flag(struct ath_rx_status *rx_stats,
 static void rx_status_htc_to_ath(struct ath_rx_status *rx_stats,
 				 struct ath_htc_rx_status *rxstatus)
 {
-	rx_stats->rs_datalen	= rxstatus->rs_datalen;
+	rx_stats->rs_datalen	= be16_to_cpu(rxstatus->rs_datalen);
 	rx_stats->rs_status	= rxstatus->rs_status;
 	rx_stats->rs_phyerr	= rxstatus->rs_phyerr;
 	rx_stats->rs_rssi	= rxstatus->rs_rssi;
@@ -974,7 +978,7 @@ static bool ath9k_rx_prepare(struct ath9k_htc_priv *priv,
 	struct ath_hw *ah = common->ah;
 	struct ath_htc_rx_status *rxstatus;
 	struct ath_rx_status rx_stats;
-	bool decrypt_error;
+	bool decrypt_error = false;
 
 	if (skb->len < HTC_RX_FRAME_HEADER_SIZE) {
 		ath_err(common, "Corrupted RX frame, dropping (len: %d)\n",
@@ -992,8 +996,6 @@ static bool ath9k_rx_prepare(struct ath9k_htc_priv *priv,
 		goto rx_next;
 	}
 
-	ath9k_htc_err_stat_rx(priv, rxstatus);
-
 	/* Get the RX status information */
 
 	memset(rx_status, 0, sizeof(struct ieee80211_rx_status));
@@ -1001,6 +1003,7 @@ static bool ath9k_rx_prepare(struct ath9k_htc_priv *priv,
 	/* Copy everything from ath_htc_rx_status (HTC_RX_FRAME_HEADER).
 	 * After this, we can drop this part of skb. */
 	rx_status_htc_to_ath(&rx_stats, rxstatus);
+	ath9k_htc_err_stat_rx(priv, &rx_stats);
 	rx_status->mactime = be64_to_cpu(rxstatus->rs_tstamp);
 	skb_pull(skb, HTC_RX_FRAME_HEADER_SIZE);
 
@@ -1009,6 +1012,20 @@ static bool ath9k_rx_prepare(struct ath9k_htc_priv *priv,
 	 * separately to avoid doing two lookups for a rate for each frame.
 	 */
 	hdr = (struct ieee80211_hdr *)skb->data;
+
+	/*
+	 * Process PHY errors and return so that the packet
+	 * can be dropped.
+	 */
+	if (rx_stats.rs_status & ATH9K_RXERR_PHY) {
+		/* TODO: Not using DFS processing now. */
+		if (ath_cmn_process_fft(&priv->spec_priv, hdr,
+				    &rx_stats, rx_status->mactime)) {
+			/* TODO: Code to collect spectral scan statistics */
+		}
+		goto rx_next;
+	}
+
 	if (!ath9k_cmn_rx_accept(common, hdr, rx_status, &rx_stats,
 			&decrypt_error, priv->rxfilter))
 		goto rx_next;

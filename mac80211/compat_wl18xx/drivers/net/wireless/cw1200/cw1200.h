@@ -23,17 +23,11 @@
 #include <linux/workqueue.h>
 #include <net/mac80211.h>
 
-#include <linux/version.h>
-
 #include "queue.h"
 #include "wsm.h"
 #include "scan.h"
 #include "txrx.h"
 #include "pm.h"
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 36))
-#define CW1200_USE_COMPAT_KTHREAD
-#endif
 
 /* Forward declarations */
 struct hwbus_ops;
@@ -196,12 +190,8 @@ struct cw1200_common {
 	atomic_t			bh_term;
 	atomic_t			bh_suspend;
 
-#ifdef CW1200_USE_COMPAT_KTHREAD
-	struct task_struct              *bh_thread;
-#else
 	struct workqueue_struct         *bh_workqueue;
 	struct work_struct              bh_work;
-#endif
 
 	int				bh_error;
 	wait_queue_head_t		bh_wq;

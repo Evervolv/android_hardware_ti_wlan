@@ -182,7 +182,7 @@ static int p54_start(struct ieee80211_hw *dev)
 	if (err)
 		goto out;
 
-	memset(priv->bssid, ~0, ETH_ALEN);
+	eth_broadcast_addr(priv->bssid);
 	priv->mode = NL80211_IFTYPE_MONITOR;
 	err = p54_setup_mac(priv);
 	if (err) {
@@ -274,8 +274,8 @@ static void p54_remove_interface(struct ieee80211_hw *dev,
 		wait_for_completion_interruptible_timeout(&priv->beacon_comp, HZ);
 	}
 	priv->mode = NL80211_IFTYPE_MONITOR;
-	memset(priv->mac_addr, 0, ETH_ALEN);
-	memset(priv->bssid, 0, ETH_ALEN);
+	eth_zero_addr(priv->mac_addr);
+	eth_zero_addr(priv->bssid);
 	p54_setup_mac(priv);
 	mutex_unlock(&priv->conf_mutex);
 }
@@ -305,9 +305,9 @@ static void p54_reset_stats(struct p54_common *priv)
 		struct survey_info *info = &priv->survey[chan->hw_value];
 
 		/* only reset channel statistics, don't touch .filled, etc. */
-		info->channel_time = 0;
-		info->channel_time_busy = 0;
-		info->channel_time_tx = 0;
+		info->time = 0;
+		info->time_busy = 0;
+		info->time_tx = 0;
 	}
 
 	priv->update_stats = true;
@@ -363,18 +363,11 @@ out:
 	return ret;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 static u64 p54_prepare_multicast(struct ieee80211_hw *dev,
 				 struct netdev_hw_addr_list *mc_list)
-#else
-static u64 p54_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
-				 struct dev_addr_list *ha)
-#endif
 {
 	struct p54_common *priv = dev->priv;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
-#endif
 	int i;
 
 	BUILD_BUG_ON(ARRAY_SIZE(priv->mc_maclist) !=
@@ -384,23 +377,12 @@ static u64 p54_prepare_multicast(struct ieee80211_hw *dev, int mc_count,
 	 * Otherwise the firmware will drop it and ARP will no longer work.
 	 */
 	i = 1;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	priv->mc_maclist_num = netdev_hw_addr_list_count(mc_list) + i;
 	netdev_hw_addr_list_for_each(ha, mc_list) {
 		memcpy(&priv->mc_maclist[i], ha->addr, ETH_ALEN);
-#else
-	priv->mc_maclist_num = mc_count + i;
-	while (i <= mc_count) {
-		if (!ha)
-			break;
-		memcpy(&priv->mc_maclist[i], ha->dmi_addr, ETH_ALEN);
-#endif
 		i++;
 		if (i >= ARRAY_SIZE(priv->mc_maclist))
 			break;
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,35))
-		ha = ha->next;
-#endif
 	}
 
 	return 1; /* update */
@@ -593,6 +575,8 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 			key->hw_key_idx = 0xff;
 			goto out_unlock;
 		}
+
+		key->flags |= IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 	} else {
 		slot = key->hw_key_idx;
 
@@ -652,7 +636,7 @@ static int p54_get_survey(struct ieee80211_hw *dev, int idx,
 
 		if (in_use) {
 			/* test if the reported statistics are valid. */
-			if  (survey->channel_time != 0) {
+			if  (survey->time != 0) {
 				survey->filled |= SURVEY_INFO_IN_USE;
 			} else {
 				/*
@@ -687,7 +671,8 @@ static unsigned int p54_flush_count(struct p54_common *priv)
 	return total;
 }
 
-static void p54_flush(struct ieee80211_hw *dev, u32 queues, bool drop)
+static void p54_flush(struct ieee80211_hw *dev, struct ieee80211_vif *vif,
+		      u32 queues, bool drop)
 {
 	struct p54_common *priv = dev->priv;
 	unsigned int total, i;
@@ -713,7 +698,8 @@ static void p54_flush(struct ieee80211_hw *dev, u32 queues, bool drop)
 	WARN(total, "tx flush timeout, unresponsive firmware");
 }
 
-static void p54_set_coverage_class(struct ieee80211_hw *dev, u8 coverage_class)
+static void p54_set_coverage_class(struct ieee80211_hw *dev,
+				   s16 coverage_class)
 {
 	struct p54_common *priv = dev->priv;
 
@@ -808,7 +794,7 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 	init_completion(&priv->beacon_comp);
 	INIT_DELAYED_WORK(&priv->work, p54_work);
 
-	memset(&priv->mc_maclist[0], ~0, ETH_ALEN);
+	eth_broadcast_addr(priv->mc_maclist[0]);
 	priv->curchan = NULL;
 	p54_reset_stats(priv);
 	return dev;

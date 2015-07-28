@@ -213,6 +213,7 @@ int cw1200_add_interface(struct ieee80211_hw *dev,
 	/* __le32 auto_calibration_mode = __cpu_to_le32(1); */
 
 	vif->driver_flags |= IEEE80211_VIF_BEACON_FILTER |
+			     IEEE80211_VIF_SUPPORTS_UAPSD |
 			     IEEE80211_VIF_SUPPORTS_CQM_RSSI;
 
 	mutex_lock(&priv->conf_mutex);
@@ -292,7 +293,7 @@ void cw1200_remove_interface(struct ieee80211_hw *dev,
 	}
 	priv->vif = NULL;
 	priv->mode = NL80211_IFTYPE_MONITOR;
-	memset(priv->mac_addr, 0, ETH_ALEN);
+	eth_zero_addr(priv->mac_addr);
 	memset(&priv->p2p_ps_modeinfo, 0, sizeof(priv->p2p_ps_modeinfo));
 	cw1200_free_keys(priv);
 	cw1200_setup_mac(priv);
@@ -531,13 +532,8 @@ void cw1200_set_beacon_wakeup_period_work(struct work_struct *work)
 				     priv->join_dtim_period, 0);
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 u64 cw1200_prepare_multicast(struct ieee80211_hw *hw,
 			     struct netdev_hw_addr_list *mc_list)
-#else
-u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
-			     struct dev_addr_list *ha)
-#endif
 {
 	static u8 broadcast_ipv6[ETH_ALEN] = {
 		0x33, 0x33, 0x00, 0x00, 0x00, 0x01
@@ -546,16 +542,13 @@ u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 		0x01, 0x00, 0x5e, 0x00, 0x00, 0x01
 	};
 	struct cw1200_common *priv = hw->priv;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
-#endif
 	int count = 0;
 
 	/* Disable multicast filtering */
 	priv->has_multicast_subscription = false;
 	memset(&priv->multicast_filter, 0x00, sizeof(priv->multicast_filter));
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	if (netdev_hw_addr_list_count(mc_list) > WSM_MAX_GRP_ADDRTABLE_ENTRIES)
 		return 0;
 
@@ -569,26 +562,13 @@ u64 cw1200_prepare_multicast(struct ieee80211_hw *hw, int mc_count,
 			priv->has_multicast_subscription = true;
 		count++;
 	}
-#else
-	while (ha &&
-	       count < mc_count &&
-	       count < WSM_MAX_GRP_ADDRTABLE_ENTRIES) {
-		memcpy(&priv->multicast_filter.macaddrs[count],
-		       ha->dmi_addr, ETH_ALEN);
-		if (memcmp(ha->dmi_addr, broadcast_ipv4, ETH_ALEN) &&
-		    memcmp(ha->dmi_addr, broadcast_ipv6, ETH_ALEN))
-			priv->has_multicast_subscription = true;
-		count++;
-		ha = ha->next;
-	}
-#endif
 
 	if (count) {
 		priv->multicast_filter.enable = __cpu_to_le32(1);
 		priv->multicast_filter.num_addrs = __cpu_to_le32(count);
 	}
 
-	return count;
+	return netdev_hw_addr_list_count(mc_list);
 }
 
 void cw1200_configure_filter(struct ieee80211_hw *dev,
@@ -729,7 +709,8 @@ int cw1200_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 		if (sta)
 			peer_addr = sta->addr;
 
-		key->flags |= IEEE80211_KEY_FLAG_PUT_IV_SPACE;
+		key->flags |= IEEE80211_KEY_FLAG_PUT_IV_SPACE |
+			      IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 
 		switch (key->cipher) {
 		case WLAN_CIPHER_SUITE_WEP40:
@@ -957,7 +938,8 @@ static int __cw1200_flush(struct cw1200_common *priv, bool drop)
 	return ret;
 }
 
-void cw1200_flush(struct ieee80211_hw *hw, u32 queues, bool drop)
+void cw1200_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		  u32 queues, bool drop)
 {
 	struct cw1200_common *priv = hw->priv;
 
@@ -1258,8 +1240,8 @@ static void cw1200_do_join(struct cw1200_common *priv)
 
 	bssid = priv->vif->bss_conf.bssid;
 
-	bss = cfg80211_get_bss(priv->hw->wiphy, priv->channel,
-			bssid, NULL, 0, 0, 0);
+	bss = cfg80211_get_bss(priv->hw->wiphy, priv->channel, bssid, NULL, 0,
+			       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
 
 	if (!bss && !conf->ibss_joined) {
 		wsm_unlock_tx(priv);
@@ -2309,7 +2291,6 @@ static int cw1200_upload_null(struct cw1200_common *priv)
 
 static int cw1200_upload_qosnull(struct cw1200_common *priv)
 {
-	int ret = 0;
 	/* TODO:  This needs to be implemented
 
 	struct wsm_template_frame frame = {
@@ -2326,7 +2307,7 @@ static int cw1200_upload_qosnull(struct cw1200_common *priv)
 	dev_kfree_skb(frame.skb);
 
 	*/
-	return ret;
+	return 0;
 }
 
 static int cw1200_enable_beaconing(struct cw1200_common *priv,

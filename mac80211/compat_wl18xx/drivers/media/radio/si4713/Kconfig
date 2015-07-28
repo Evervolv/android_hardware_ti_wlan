@@ -1,8 +1,9 @@
 config USB_SI4713
+	depends on !KERNEL_3_17
 	tristate "Silicon Labs Si4713 FM Radio Transmitter support with USB"
 	depends on m
-	depends on USB && RADIO_SI4713
-	depends on SI4713
+	depends on USB && I2C && RADIO_SI4713
+	select I2C_SI4713
 	---help---
 	  This is a driver for USB devices with the Silicon Labs SI4713
 	  chip. Currently these devices are known to work.
@@ -15,10 +16,11 @@ config USB_SI4713
 	  module will be called radio-usb-si4713.
 
 config PLATFORM_SI4713
+	depends on !KERNEL_3_17
 	tristate "Silicon Labs Si4713 FM Radio Transmitter support with I2C"
 	depends on m
 	depends on I2C && RADIO_SI4713
-	depends on SI4713
+	select I2C_SI4713
 	---help---
 	  This is a driver for I2C devices with the Silicon Labs SI4713
 	  chip.
@@ -30,6 +32,7 @@ config PLATFORM_SI4713
 	  module will be called radio-platform-si4713.
 
 config I2C_SI4713
+	depends on !KERNEL_3_17
 	tristate "Silicon Labs Si4713 FM Radio Transmitter support"
 	depends on m
 	depends on I2C && RADIO_SI4713

@@ -1,8 +1,6 @@
 #ifndef __BACKPORT_RCULIST_H
 #define __BACKPORT_RCULIST_H
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26)
 #include_next <linux/rculist.h>
-#endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
 #include <backport/magic.h>
@@ -24,21 +22,6 @@
 	macro_dispatcher(hlist_for_each_entry_rcu, __VA_ARGS__)(__VA_ARGS__)
 #endif /* < 3.9 */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
-/**
- * backport:
- *
- * commit 67bdbffd696f29a0b68aa8daa285783a06651583
- * Author: Arnd Bergmann <arnd@arndb.de>
- * Date:   Thu Feb 25 16:55:13 2010 +0100
- *
- *     rculist: avoid __rcu annotations
- */
-#define hlist_first_rcu(head)	(*((struct hlist_node __rcu **)(&(head)->first)))
-#define hlist_next_rcu(node)	(*((struct hlist_node __rcu **)(&(node)->next)))
-
-#endif /* < 2.6.37 */
-
 #ifndef list_for_each_entry_continue_rcu
 #define list_for_each_entry_continue_rcu(pos, head, member) 		\
 	for (pos = list_entry_rcu(pos->member.next, typeof(*pos), member); \
@@ -50,5 +33,25 @@
 #define list_entry_rcu(ptr, type, member) \
 	container_of(rcu_dereference(ptr), type, member)
 #endif
+
+#ifndef list_first_or_null_rcu
+/**
+ * list_first_or_null_rcu - get the first element from a list
+ * @ptr:        the list head to take the element from.
+ * @type:       the type of the struct this is embedded in.
+ * @member:     the name of the list_struct within the struct.
+ *
+ * Note that if the list is empty, it returns NULL.
+ *
+ * This primitive may safely run concurrently with the _rcu list-mutation
+ * primitives such as list_add_rcu() as long as it's guarded by rcu_read_lock().
+ */
+#define list_first_or_null_rcu(ptr, type, member) \
+({ \
+	struct list_head *__ptr = (ptr); \
+	struct list_head *__next = ACCESS_ONCE(__ptr->next); \
+	likely(__ptr != __next) ? list_entry_rcu(__next, type, member) : NULL; \
+})
+#endif /* list_first_or_null_rcu */
 
 #endif /* __BACKPORT_RCULIST_H */

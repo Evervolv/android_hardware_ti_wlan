@@ -3,7 +3,7 @@
 #
 
 menuconfig NFC
-	depends on !BACKPORT_KERNEL_3_1
+	depends on !KERNEL_3_1
 	depends on NET
 	depends on RFKILL || !RFKILL
 	tristate "NFC subsystem support"

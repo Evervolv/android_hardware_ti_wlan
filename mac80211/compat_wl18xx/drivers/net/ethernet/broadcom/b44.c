@@ -31,7 +31,6 @@
 #include <linux/ssb/ssb.h>
 #include <linux/slab.h>
 #include <linux/phy.h>
-#include <linux/u64_stats_sync.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -106,7 +105,7 @@ MODULE_PARM_DESC(b44_debug, "B44 bitmapped debugging message enable value");
 
 
 #ifdef CPTCFG_B44_PCI
-static DEFINE_PCI_DEVICE_TABLE(b44_pci_tbl) = {
+static const struct pci_device_id b44_pci_tbl[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B0) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_BROADCOM, PCI_DEVICE_ID_BCM4401B1) },
@@ -122,7 +121,7 @@ static struct pci_driver b44_pci_driver = {
 
 static const struct ssb_device_id b44_ssb_tbl[] = {
 	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_ETHERNET, SSB_ANY_REV),
-	SSB_DEVTABLE_END
+	{},
 };
 MODULE_DEVICE_TABLE(ssb, b44_ssb_tbl);
 
@@ -401,7 +400,7 @@ static void b44_set_flow_ctrl(struct b44 *bp, u32 local, u32 remote)
 }
 
 #ifdef CONFIG_BCM47XX
-#include <bcm47xx_nvram.h>
+#include <linux/bcm47xx_nvram.h>
 static void b44_wap54g10_workaround(struct b44 *bp)
 {
 	char buf[20];
@@ -428,7 +427,7 @@ static void b44_wap54g10_workaround(struct b44 *bp)
 	}
 	return;
 error:
-	pr_warning("PHY: cannot reset MII transceiver isolate bit\n");
+	pr_warn("PHY: cannot reset MII transceiver isolate bit\n");
 }
 #else
 static inline void b44_wap54g10_workaround(struct b44 *bp)
@@ -837,7 +836,7 @@ static int b44_rx(struct b44 *bp, int budget)
 			struct sk_buff *copy_skb;
 
 			b44_recycle_rx(bp, cons, bp->rx_prod);
-			copy_skb = netdev_alloc_skb_ip_align(bp->dev, len);
+			copy_skb = napi_alloc_skb(&bp->napi, len);
 			if (copy_skb == NULL)
 				goto drop_it_no_recycle;
 
@@ -1485,6 +1484,10 @@ static int b44_open(struct net_device *dev)
 	add_timer(&bp->timer);
 
 	b44_enable_ints(bp);
+
+	if (bp->flags & B44_FLAG_EXTERNAL_PHY)
+		phy_start(bp->phydev);
+
 	netif_start_queue(dev);
 out:
 	return err;
@@ -1647,6 +1650,9 @@ static int b44_close(struct net_device *dev)
 
 	netif_stop_queue(dev);
 
+	if (bp->flags & B44_FLAG_EXTERNAL_PHY)
+		phy_stop(bp->phydev);
+
 	napi_disable(&bp->napi);
 
 	del_timer_sync(&bp->timer);
@@ -1671,22 +1677,15 @@ static int b44_close(struct net_device *dev)
 	return 0;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 static struct rtnl_link_stats64 *b44_get_stats64(struct net_device *dev,
 					struct rtnl_link_stats64 *nstat)
-#else
-static struct net_device_stats *b44_get_stats(struct net_device *dev)
-#endif
 {
 	struct b44 *bp = netdev_priv(dev);
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,36))
-	struct net_device_stats *nstat = &dev->stats;
-#endif
 	struct b44_hw_stats *hwstat = &bp->hw_stats;
 	unsigned int start;
 
 	do {
-		start = u64_stats_fetch_begin_bh(&hwstat->syncp);
+		start = u64_stats_fetch_begin_irq(&hwstat->syncp);
 
 		/* Convert HW stats into rtnl_link_stats64 stats. */
 		nstat->rx_packets = hwstat->rx_pkts;
@@ -1698,7 +1697,7 @@ static struct net_device_stats *b44_get_stats(struct net_device *dev)
 				     hwstat->tx_underruns +
 				     hwstat->tx_excessive_cols +
 				     hwstat->tx_late_cols);
-		nstat->multicast  = hwstat->tx_multicast_pkts;
+		nstat->multicast  = hwstat->rx_multicast_pkts;
 		nstat->collisions = hwstat->tx_total_cols;
 
 		nstat->rx_length_errors = (hwstat->rx_oversize_pkts +
@@ -1720,7 +1719,7 @@ static struct net_device_stats *b44_get_stats(struct net_device *dev)
 		/* Carrier lost counter seems to be broken for some devices */
 		nstat->tx_carrier_errors = hwstat->tx_carrier_lost;
 #endif
-	} while (u64_stats_fetch_retry_bh(&hwstat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&hwstat->syncp, start));
 
 	return nstat;
 }
@@ -2074,12 +2073,12 @@ static void b44_get_ethtool_stats(struct net_device *dev,
 	do {
 		data_src = &hwstat->tx_good_octets;
 		data_dst = data;
-		start = u64_stats_fetch_begin_bh(&hwstat->syncp);
+		start = u64_stats_fetch_begin_irq(&hwstat->syncp);
 
 		for (i = 0; i < ARRAY_SIZE(b44_gstrings); i++)
 			*data_dst++ = *data_src++;
 
-	} while (u64_stats_fetch_retry_bh(&hwstat->syncp, start));
+	} while (u64_stats_fetch_retry_irq(&hwstat->syncp, start));
 }
 
 static void b44_get_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
@@ -2105,6 +2104,7 @@ static int b44_set_wol(struct net_device *dev, struct ethtool_wolinfo *wol)
 		bp->flags &= ~B44_FLAG_WOL_ENABLE;
 	spin_unlock_irq(&bp->lock);
 
+	device_set_wakeup_enable(bp->sdev->dev, wol->wolopts & WAKE_MAGIC);
 	return 0;
 }
 
@@ -2191,11 +2191,7 @@ static const struct net_device_ops b44_netdev_ops = {
 	.ndo_open		= b44_open,
 	.ndo_stop		= b44_close,
 	.ndo_start_xmit		= b44_start_xmit,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,36))
 	.ndo_get_stats64	= b44_get_stats64,
-#else
-	.ndo_get_stats		= b44_get_stats,
-#endif
 	.ndo_set_rx_mode	= b44_set_rx_mode,
 	.ndo_set_mac_address	= b44_set_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,
@@ -2234,7 +2230,12 @@ static void b44_adjust_link(struct net_device *dev)
 	}
 
 	if (status_changed) {
-		b44_check_phy(bp);
+		u32 val = br32(bp, B44_TX_CTRL);
+		if (bp->flags & B44_FLAG_FULL_DUPLEX)
+			val |= TX_CTRL_DUPLEX;
+		else
+			val &= ~TX_CTRL_DUPLEX;
+		bw32(bp, B44_TX_CTRL, val);
 		phy_print_status(phydev);
 	}
 }
@@ -2380,7 +2381,7 @@ static int b44_init_one(struct ssb_device *sdev,
 	netif_napi_add(dev, &bp->napi, b44_poll, 64);
 	dev->watchdog_timeo = B44_TX_TIMEOUT;
 	dev->irq = sdev->irq;
-	SET_ETHTOOL_OPS(dev, &b44_ethtool_ops);
+	dev->ethtool_ops = &b44_ethtool_ops;
 
 	err = ssb_bus_powerup(sdev->bus, 0);
 	if (err) {
@@ -2452,6 +2453,7 @@ static int b44_init_one(struct ssb_device *sdev,
 		}
 	}
 
+	device_set_wakeup_capable(sdev->dev, true);
 	netdev_info(dev, "%s %pM\n", DRV_DESCRIPTION, dev->dev_addr);
 
 	return 0;

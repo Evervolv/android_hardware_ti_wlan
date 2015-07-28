@@ -152,7 +152,7 @@ static int lbtf_setup_firmware(struct lbtf_private *priv)
 	/*
 	 * Read priv address from HW
 	 */
-	memset(priv->current_addr, 0xff, ETH_ALEN);
+	eth_broadcast_addr(priv->current_addr);
 	ret = lbtf_update_hw_spec(priv);
 	if (ret) {
 		ret = -1;
@@ -199,7 +199,7 @@ out:
 static int lbtf_init_adapter(struct lbtf_private *priv)
 {
 	lbtf_deb_enter(LBTF_DEB_MAIN);
-	memset(priv->current_addr, 0xff, ETH_ALEN);
+	eth_broadcast_addr(priv->current_addr);
 	mutex_init(&priv->lock);
 
 	priv->vif = NULL;
@@ -332,7 +332,7 @@ static int lbtf_op_start(struct ieee80211_hw *hw)
 
 err_prog_firmware:
 	priv->hw_reset_device(card);
-	lbtf_deb_leave_args(LBTF_DEB_MACOPS, "error programing fw; ret=%d", ret);
+	lbtf_deb_leave_args(LBTF_DEB_MACOPS, "error programming fw; ret=%d", ret);
 	return ret;
 }
 
@@ -421,36 +421,20 @@ static int lbtf_op_config(struct ieee80211_hw *hw, u32 changed)
 }
 
 static u64 lbtf_op_prepare_multicast(struct ieee80211_hw *hw,
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 				     struct netdev_hw_addr_list *mc_list)
-#else
-				     int mc_count, struct dev_addr_list *ha)
-#endif
 {
 	struct lbtf_private *priv = hw->priv;
 	int i;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	struct netdev_hw_addr *ha;
 	int mc_count = netdev_hw_addr_list_count(mc_list);
-#endif
 
 	if (!mc_count || mc_count > MRVDRV_MAX_MULTICAST_LIST_SIZE)
 		return mc_count;
 
 	priv->nr_of_multicastmacaddr = mc_count;
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35))
 	i = 0;
 	netdev_hw_addr_list_for_each(ha, mc_list)
 		memcpy(&priv->multicastlist[i++], ha->addr, ETH_ALEN);
-#else
-	for (i = 0; i < mc_count; i++) {
-		if (!ha)
-			break;
-		memcpy(&priv->multicastlist[i], ha->da_addr,
-				ETH_ALEN);
-		ha = ha->next;
-	}
-#endif
 
 	return mc_count;
 }
