@@ -464,7 +464,6 @@ static ssize_t driver_state_read(struct file *file, char __user *user_buf,
 #define DRIVER_STATE_PRINT_HEX(x)  DRIVER_STATE_PRINT(x, "0x%x")
 
 	DRIVER_STATE_PRINT_GENERIC(version, "%s", wlcore_git_head);
-	DRIVER_STATE_PRINT_GENERIC(timestamp, "%s", wlcore_timestamp);
 
 	wl12xx_for_each_wlvif_sta(wl, wlvif) {
 		if (!test_bit(WLVIF_FLAG_STA_ASSOCIATED, &wlvif->flags))

@@ -28,8 +28,7 @@ else
 WLCORE_VERSION_DEPS := $(GIT_PATH).git/HEAD $(GIT_PATH).git/index $(GIT_PATH).git/refs/tags
 
 define filechk_version.h
-	(echo 'static const char *wlcore_timestamp = __TIMESTAMP__;'; \
-	echo 'static const char *wlcore_git_head = \
+	(echo 'static const char *wlcore_git_head = \
 			"$(shell $(GIT_CHDIR_CMD) git describe --dirty)";')
 endef
 
