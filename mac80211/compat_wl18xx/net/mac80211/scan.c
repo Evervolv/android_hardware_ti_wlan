@@ -68,6 +68,10 @@ ieee80211_bss_info_update(struct ieee80211_local *local,
 	struct ieee80211_bss *bss;
 	int clen, srlen;
 	struct cfg80211_inform_bss bss_meta = {};
+	struct timespec tfb;
+
+	get_monotonic_boottime(&tfb);
+	bss_meta.boottime_ns = (u64) timespec_to_ns(&tfb);
 
 	if (local->hw.flags & IEEE80211_HW_SIGNAL_DBM)
 		bss_meta.signal = rx_status->signal * 100;

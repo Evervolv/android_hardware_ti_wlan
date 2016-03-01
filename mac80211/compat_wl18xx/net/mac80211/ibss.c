@@ -232,6 +232,10 @@ static void __ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 	bool have_higher_than_11mbit;
 	bool radar_required;
 	int err;
+	struct timespec tfb;
+
+	get_monotonic_boottime(&tfb);
+	bss_meta.boottime_ns = (u64) timespec_to_ns(&tfb);
 
 	sdata_assert_lock(sdata);
 
