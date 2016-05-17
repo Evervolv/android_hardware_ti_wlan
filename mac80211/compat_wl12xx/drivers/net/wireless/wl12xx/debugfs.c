@@ -584,7 +584,6 @@ static ssize_t driver_state_read(struct file *file, char __user *user_buf,
 #define DRIVER_STATE_PRINT_HEX(x)  DRIVER_STATE_PRINT(x, "0x%x")
 
 	DRIVER_STATE_PRINT_GENERIC(version, "%s", wl12xx_git_head);
-	DRIVER_STATE_PRINT_GENERIC(timestamp, "%s", wl12xx_timestamp);
 
 	DRIVER_STATE_PRINT_INT(tx_blocks_available);
 	DRIVER_STATE_PRINT_INT(tx_allocated_blocks);

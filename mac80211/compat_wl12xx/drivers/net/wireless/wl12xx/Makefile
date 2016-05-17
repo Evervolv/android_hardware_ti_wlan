@@ -1,13 +1,45 @@
 wl12xx-objs		= main.o cmd.o io.o event.o tx.o rx.o ps.o acx.o \
 			  boot.o init.o debugfs.o scan.o
 
+# use special params for the compat case
+ifneq ($(KLIB_BUILD),)
+ifneq ($(GIT_TREE),)
+GIT_PATH := $(GIT_TREE)/
+GIT_CHDIR_CMD := cd $(GIT_TREE) &&
+endif
+endif
+
+ifneq ($(GIT_PATH),)
+GIT_CHECK_PATH := $(GIT_PATH)
+else
+GIT_CHECK_PATH := $(PWD)/
+GIT_CHDIR_CMD := cd $(GIT_CHECK_PATH) &&
+endif
+
+WLCORE_VERSION_DEPS := $(src)/../../../../compat_base_tree_version
+
+ifeq ($(wildcard $(GIT_CHECK_PATH).git),)
+# use only release_version.h if no .git
+
 define filechk_version.h
-	(echo 'static const char *wl12xx_timestamp = __TIMESTAMP__;'; \
-	echo 'static const char *wl12xx_git_head = \
-			"$(shell git describe --dirty)";')
+	(echo 'static const char *wl12xx_git_head = \
+			"$(shell cat $(WLCORE_VERSION_DEPS)";')
 endef
 
-$(obj)/version.h: .git/HEAD .git/index .git/refs/tags
+else
+# augment version with git describe
+
+define filechk_version.h
+	(echo 'static const char *wl12xx_git_head = \
+			"$(shell cat $(WLCORE_VERSION_DEPS))+$(shell \
+			 $(GIT_CHDIR_CMD) git describe --dirty)";')
+endef
+
+WLCORE_VERSION_DEPS += $(GIT_PATH).git
+endif
+
+.PHONY: $(obj)/version.h
+$(obj)/version.h: $(WLCORE_VERSION_DEPS)
 	@$(call filechk,version.h)
 
 $(obj)/main.c: $(src)/version.h

@@ -13,27 +13,30 @@ ifneq ($(GIT_PATH),)
 GIT_CHECK_PATH := $(GIT_PATH)
 else
 GIT_CHECK_PATH := $(PWD)/
+GIT_CHDIR_CMD := cd $(GIT_CHECK_PATH) &&
 endif
 
-ifeq ($(wildcard $(GIT_CHECK_PATH).git/HEAD),)
-# use release_version.h if .git not exists
 WLCORE_VERSION_DEPS := $(src)/release_version.h
 
+ifeq ($(wildcard $(GIT_CHECK_PATH).git),)
+# use only release_version.h if no .git
+
 define filechk_version.h
-	(cat $(src)/release_version.h)
+	(cat $(WLCORE_VERSION_DEPS))
 endef
 
 else
-# use git describe to determine version
-WLCORE_VERSION_DEPS := $(GIT_PATH).git/HEAD $(GIT_PATH).git/index $(GIT_PATH).git/refs/tags
+# augment version with git describe
 
 define filechk_version.h
-	(echo 'static const char *wlcore_git_head = \
-			"$(shell $(GIT_CHDIR_CMD) git describe --dirty)";')
+	(cat $(WLCORE_VERSION_DEPS) | sed 's/"\(.*\)"/"\1+$(shell \
+			$(GIT_CHDIR_CMD) git describe --dirty)"/')
 endef
 
+WLCORE_VERSION_DEPS += $(GIT_PATH).git
 endif
 
+.PHONY: $(obj)/version.h
 $(obj)/version.h: $(WLCORE_VERSION_DEPS)
 	@$(call filechk,version.h)
 
