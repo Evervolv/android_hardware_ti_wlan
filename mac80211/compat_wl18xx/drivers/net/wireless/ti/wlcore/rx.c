@@ -210,7 +210,7 @@ static int wl1271_rx_handle_data(struct wl1271 *wl, u8 *data, u32 length,
 
 #ifdef CONFIG_HAS_WAKELOCK
 	/* let the frame some time to propagate to user-space */
-	wake_lock_timeout(&wl->rx_wake, HZ);
+	wake_lock_timeout(&wl->rx_wake, HZ / 4);
 #endif
 
 	return is_data;
