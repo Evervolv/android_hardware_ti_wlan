@@ -1515,10 +1515,49 @@ static bool wl12xx_mac_in_fuse(struct wl1271 *wl)
 	return supported;
 }
 
+/*
+    PX-1875: added function to init pll similar to that on JB driver
+    init pll otherwise happens much later
+    but we need it early
+*/
+int wl12xx_init_pll_clock(struct wl1271 *wl, int *selected_clock)
+{
+    int ret = 0;
+
+    if (wl->chip.id == CHIP_ID_128X_PG20) {
+            ret = wl128x_boot_clk(wl, &selected_clock);
+            if (ret < 0)
+              return ret;
+    } else {
+            ret = wl127x_boot_clk(wl);
+            if (ret < 0)
+              return ret;
+    }
+
+    /* Continue the ELP wake up sequence */
+    ret = wlcore_write32(wl, WL12XX_WELP_ARM_COMMAND, WELP_ARM_COMMAND_VAL);
+    if (ret < 0)
+        return ret;
+
+    udelay(500);
+    return ret;
+}
+
+
 static int wl12xx_get_fuse_mac(struct wl1271 *wl)
 {
 	u32 mac1, mac2;
 	int ret;
+
+        int selected_clock = -1;
+
+        // PX-1875: call init pll to be able to enable wifi
+        // when GPS/BT is enabled
+        // The PLL init otherwise happens much later
+        // and get_fuse_mac() fails
+        ret = wl12xx_init_pll_clock(wl, &selected_clock);
+        if (ret < 0)
+            goto out;
 
 	ret = wlcore_set_partition(wl, &wl->ptable[PART_DRPW]);
 	if (ret < 0)
