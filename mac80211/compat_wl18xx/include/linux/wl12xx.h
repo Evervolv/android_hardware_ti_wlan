@@ -40,6 +40,8 @@ struct wl12xx_platform_data {
 	u32 ref_clock_freq;	/* in Hertz */
 	u32 tcxo_clock_freq;	/* in Hertz, tcxo is always XTAL */
 	bool pwr_in_suspend;
+
+	void (*set_power)(bool enable);
 };
 
 #ifdef CPTCFG_WILINK_PLATFORM_DATA
