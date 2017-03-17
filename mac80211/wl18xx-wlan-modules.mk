@@ -4,7 +4,7 @@ WL18XX_FOLDER ?= hardware/ti/wlan/mac80211/compat_wl18xx
 WL18XX_MODULES: MLIST := wl1*xx
 
 # List of watched Kconfig symbols
-WL18XX_MODULES: CFGLIST := WL12XX WL18XX
+WL18XX_MODULES: CFGLIST := WL12XX WL18XX CFG80211_INTERNAL_REGDB
 
 # A couple of useful macros
 commify = $(subst $(space),$(comma),$(1))
@@ -15,6 +15,8 @@ WL18XX_MODULES: $(KERNEL_CONFIG)
 	make mrproper -C $(WL18XX_FOLDER) KLIB=$(KERNEL_OUT) KLIB_BUILD=$(KERNEL_OUT)
 	cp $(WL18XX_FOLDER)/defconfigs/{wl18xx,tmp}; grep "$(call symgrep,$(CFGLIST))" \
 	$(KERNEL_CONFIG) | sed 's/CONFIG_/CPTCFG_/g' >> $(WL18XX_FOLDER)/defconfigs/tmp
+	sed -i '/^CPTCFG_CFG80211_INTERNAL_REGDB=y$$/a \
+	# CPTCFG_CFG80211_CRDA_SUPPORT is not set' $(WL18XX_FOLDER)/defconfigs/tmp
 	make defconfig-tmp -C $(WL18XX_FOLDER) KLIB=$(KERNEL_OUT) KLIB_BUILD=$(KERNEL_OUT)
 	make -j8 -C $(WL18XX_FOLDER) KLIB=$(KERNEL_OUT) KLIB_BUILD=$(KERNEL_OUT) \
 		ARCH=arm $(if $(ARM_CROSS_COMPILE),$(ARM_CROSS_COMPILE),$(KERNEL_CROSS_COMPILE))
